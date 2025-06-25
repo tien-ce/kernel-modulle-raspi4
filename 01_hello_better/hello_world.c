@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -6,17 +7,16 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
 MODULE_DESCRIPTION("example Linux module");
 MODULE_VERSION("0.01");
-int a1;
-EXPORT_SYMBOL(a1);
-int init_module(void)
+// extern int a1;
+static int __init my_init_module(void)
 {
-	printk(KERN_INFO "Hello world 1.\n");
-	a1 = 10;
+	pr_info("Hello world 2.\n");
 	return 0;
 }
 
-void cleanup_module(void)
+static void __exit my_cleanup_module(void)
 {
-	printk(KERN_INFO "Goodbye world 1.\n");
+	pr_info("Goodbye world 2.\n");
 }
-
+module_init(my_init_module);
+module_exit(my_cleanup_module);
