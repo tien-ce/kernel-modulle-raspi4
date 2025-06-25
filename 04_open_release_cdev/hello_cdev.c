@@ -93,5 +93,5 @@ static ssize_t my_write(struct file *file, const char __user *buf, size_t count,
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
-MODULE_DESCRIPTION("A sample driver for registering a character device");
+MODULE_DESCRIPTION("A sample driver for open and release character device");
 MODULE_VERSION("0.01");

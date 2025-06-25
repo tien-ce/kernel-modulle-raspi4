@@ -115,5 +115,5 @@ static int my_close(struct inode *inode, struct file *file)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
-MODULE_DESCRIPTION("A sample driver for registering a character device");
+MODULE_DESCRIPTION("A sample driver for read and write character device");
 MODULE_VERSION("0.01");
