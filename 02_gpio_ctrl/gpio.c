@@ -7,12 +7,12 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
 MODULE_DESCRIPTION("example Linux module");
 MODULE_VERSION("0.01");
-// extern int a1;
 #define GPIO_LED 17 // GPIO pin number for the LED
 #define IO_OFFSET 512 // Offset for the GPIO pin
 static int __init my_init_module(void)
 {
 	int status = 0;
+
 	pr_info("Hello gpio 2.\n");
 	led_gpio = gpio_to_desc(GPIO_LED + IO_OFFSET);
 	if (!led_gpio) {
