@@ -14,7 +14,6 @@ MODULE_VERSION("0.01");
 
 static int dt_probe(struct platform_device *pdev);
 static void dt_remove(struct platform_device *pdev);
-
 static const struct of_device_id my_dt_ids[] = {
     { .compatible = "brightlight,mydev", },
     { /* sentinel */ }
