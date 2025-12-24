@@ -4,136 +4,165 @@
 #include <linux/init.h>
 #include <linux/proc_fs.h>
 #include <linux/slab.h>
-#include <asm/io.h>
-typedef unsigned int uint;
+#include <linux/io.h>
+#include <linux/uaccess.h>
+#include <linux/errno.h>
+
 #define LLL_MAX_USER_SIZE 1024
-#define BCM2711_GPIO_ADDRESS 0xfe200000
+#define BCM2711_GPIO_ADDRESS 0xfe200000UL
+#define GPIO_REG_SIZE PAGE_SIZE
+
+#define GPFSEL0 0x00
+#define GPSET0  0x1C
+#define GPCLR0  0x28
+
 static struct proc_dir_entry *lll_proc = NULL;
 static char data_buffer[LLL_MAX_USER_SIZE + 1] = {0};
-static volatile uint* gpio_register_base = NULL;
+static void __iomem *gpio_base = NULL;
 
-static void gpio_pin_on (uint pin)
+/*
+ * Set the function of a GPIO pin (input/output/alt).
+ * Each GPFSEL register controls 10 pins, 3 bits per pin.
+ * func: 0=input, 1=output, 2-7=alt functions.
+ */
+static int gpio_set_function(unsigned int pin, unsigned int func)
 {
-	// Example (Pin 12) will be index 1 and position 2
-	uint fsel_index = pin / 10;	// Each FSEL (function selection) register includes 10 pin
-	uint fsel_bitpos = pin%10;	// position of pin in its index
-	
-	uint* gpio_fsel = gpio_register_base + fsel_index;	// Address of fsel_index register
+	u32 reg_off, shift, val;
 
-	// Differ with gpio_fsel (using 3 bit repersent for function of each pin), each bit of gpio_set repersent for one pin
-	uint* gpio_set0 = (uint*) ((char*)gpio_register_base + 0x1c); // GPSET0 always immediately follows 0x1c bytes with gpio_register_base. We just calculate on 1 byte so we type casting to char
+	if (pin > 53)
+		return -EINVAL;
 
-	*(gpio_fsel) &= ~(7 << (fsel_bitpos * 3));	// You will clear bit of that pin by mask it with ~(00...111 << pos*3) -> ~(00...01110...000)	 -> ~(11....10001....1)
+	// Calculate register offset: each GPFSEL is 4 bytes, 10 pins per register
+	reg_off = GPFSEL0 + (pin / 10) * 4;
+	// Each pin uses 3 bits in its GPFSEL register
+	shift = (pin % 10) * 3;
 
-	// Now 3 bit function of pin is 000 (as input)
-	*(gpio_fsel) |= (1 << (fsel_bitpos * 3));	// We simply or itself with the mask (000...001....0)	
-	// Now 3 bit function of pin is 001 (as output)	
-	
-	// Noitce that we just handle if pin in range (0-31), if pin is in rang (32-57), use gpset1 register. It is mapped through adress (gpio_set0 + 4)
-	*(gpio_set0) = (1 << pin);	// If pin < 31, the bit reprenst for it in gpio_set0 register will be set to 1.
-	return;
+	// Read, mask, and set the function bits for the pin
+	val = readl((char __iomem *)gpio_base + reg_off);
+	val &= ~(0x7u << shift); // Clear the 3 bits for this pin
+	val |= ((func & 0x7u) << shift); // Set new function
+	writel(val, (char __iomem *)gpio_base + reg_off);
+	return 0;
 }
 
-static void gpio_pin_off (uint pin)
+/*
+ * Set or clear a GPIO pin output value.
+ * GPSET0/GPCLR0: each bit controls one pin (0-31), GPSET1/GPCLR1 for 32-53.
+ * value: 1=set high, 0=set low.
+ */
+static void gpio_write_pin(unsigned int pin, int value)
 {
-	// Example (Pin 12) will be index 1 and position 2
-	uint fsel_index = pin / 10;	// Each FSEL (function selection) register includes 10 pin
-	uint fsel_bitpos = pin%10;	// position of pin in its index
-	
-	uint* gpio_fsel = gpio_register_base + fsel_index;	// Address of fsel_index register
-
-	// Differ with gpio_fsel (using 3 bit repersent for function of each pin), each bit of gpio_set repersent for one pin
-	uint* gpio_clear0 = (uint*) ((char*)gpio_register_base + 0x28); // GPCLEAR0 always immediately follows 0x28 bytes with gpio_register_base. We just calculate on 1 byte so we type casting to char
-
-	*(gpio_fsel) &= ~(7 << (fsel_bitpos * 3));	// You will clear bit of that pin by mask it with ~(00...111 << pos*3) -> ~(00...01110...000)	 -> ~(11....10001....1)
-
-	// Now 3 bit function of pin is 000 (as input)
-	*(gpio_fsel) |= (1 << (fsel_bitpos * 3));	// We simply or itself with the mask (000...001....0)	
-	// Now 3 bit function of pin is 001 (as output)	
-	
-	// Noitce that we just handle if pin in range (0-31), if pin is in rang (32-57), use gpset1 register. It is mapped through adress (gpio_set0 + 4)
-	*(gpio_clear0) = (1 << pin);	// If pin < 31, the bit reprenst for it in gpio_set0 register will be set to 1.
-	return;
+	// Select correct register (GPSET0/GPCLR0 or GPSET1/GPCLR1)
+	u32 reg_off = (value ? GPSET0 : GPCLR0) + (pin / 32) * 4;
+	// Create bitmask for the pin
+	u32 mask = 1u << (pin % 32);
+	writel(mask, (char __iomem *)gpio_base + reg_off);
 }
 
-ssize_t lll_read (struct file* file, char* user, size_t size,loff_t* off)
+static ssize_t lll_read(struct file *file, char __user *userbuf, size_t count, loff_t *ppos)
 {
-	return copy_to_user ((void*)user,(void*) "Nothing to read hh",19) ? 0 : 19;
-}
+	const char msg[] = "Nothing to read hh\n";
+	size_t len = sizeof(msg) - 1;
+	size_t avail;
 
-ssize_t lll_write(struct file* file, const char* user, size_t size, loff_t* off)
-{
-	uint pin = UINT_MAX;
-	uint value = UINT_MAX;
-	memset ((void*)data_buffer,0x0,sizeof(data_buffer));	// Initialize data
-	
-	if (size > LLL_MAX_USER_SIZE ){
-		size = LLL_MAX_USER_SIZE;
-	}
-	if (copy_from_user ((void*) data_buffer, (void*) user, size))	 // Copy data from user to buffer
+	if (*ppos >= len)
 		return 0;
-	printk ("Message coppied from user: %s\n",data_buffer);
-	int arg_size = sscanf(data_buffer,"%d,%d",&pin,&value);
-	if (arg_size != 2)
-	{
-		pr_err ("Inproper data format, size parsed %d\n",arg_size);
-		return arg_size;
-	}
-	if (pin < 0 && pin > 31){
-		pr_err ("Inproper pin number, pin number passed: %d, it shoud be in (0 - 31)\n",pin);
-		return pin;		
-	}
+
+	avail = min(count, len - (size_t)*ppos);
+	if (copy_to_user(userbuf, msg + *ppos, avail))
+		return -EFAULT;
+
+	*ppos += avail;
+	return avail;
+}
+
+/*
+ * Write handler for /proc/lll-gpio
+ * Expects input as "<pin>,<value>" (e.g., "17,1")
+ * Sets the pin as output and writes the value.
+ */
+static ssize_t lll_write(struct file *file, const char __user *userbuf, size_t count, loff_t *ppos)
+{
+	unsigned int pin = 0, value = 0;
+	int parsed;
+
+	if (count == 0 || count > LLL_MAX_USER_SIZE)
+		return -EINVAL;
+
+	// Copy user data to kernel buffer
+	if (copy_from_user(data_buffer, userbuf, count))
+		return -EFAULT;
+
+	data_buffer[count] = '\0';
+
+	// Parse pin and value from user input
+	parsed = sscanf(data_buffer, "%u,%u", &pin, &value);
+	if (parsed != 2)
+		return -EINVAL;
+
+	// Only allow valid GPIO pins and values
+	if (pin > 53)
+		return -EINVAL;
 
 	if (value != 0 && value != 1)
-	{
-		printk("Invalid on/off value, value passed:  %d, it should be 0/1 \n",value);
-		return value;
-	}
-	printk("You said pin %d, value %d\n", pin, value);
-	if (value == 1)
-		gpio_pin_on (pin);
-	else if (value == 0)
-		gpio_pin_off (pin);
-	return size;
+		return -EINVAL;
+
+	// Set pin as output (func=1)
+	if (gpio_set_function(pin, 1))
+		return -EIO;
+
+	// Set or clear the pin
+	gpio_write_pin(pin, value);
+	return count;
 }
 
-static const struct proc_ops lll_proc_ops = 
-{
+static const struct proc_ops lll_proc_ops = {
 	.proc_read = lll_read,
 	.proc_write = lll_write,
 };
 
+/*
+ * Module initialization: map GPIO registers and create /proc entry
+ */
 static int __init my_init_module(void)
 {
-	printk("Welcome to my driver!\n");
-	gpio_register_base = (uint*) ioremap(BCM2711_GPIO_ADDRESS, PAGE_SIZE);	// Read the virtual address from physical address
-	if (gpio_register_base == NULL){
-		pr_err ("Failed to map GPIO memory to driver\n");
-		return -1;
-	}
-	printk ("Succesfully mapped in GPIO memory\n");
+	pr_info("hello_mmio: initializing\n");
 
-	// Create an entry in the proc-fs
-	lll_proc = proc_create ("lll-gpio", 0666, NULL, &lll_proc_ops);
-	if (lll_proc == NULL){
-		iounmap (gpio_register_base);
-		return -1;
+	// Map physical GPIO base address to kernel virtual address space
+	gpio_base = ioremap(BCM2711_GPIO_ADDRESS, GPIO_REG_SIZE);
+	if (!gpio_base) {
+		pr_err("hello_mmio: ioremap failed\n");
+		return -ENOMEM;
 	}
+
+	// Create /proc/lll-gpio for user interaction
+	lll_proc = proc_create("lll-gpio", 0666, NULL, &lll_proc_ops);
+	if (!lll_proc) {
+		pr_err("hello_mmio: proc_create failed\n");
+		iounmap(gpio_base);
+		return -ENOMEM;
+	}
+
+	pr_info("hello_mmio: initialized successfully\n");
 	return 0;
 }
 
+/*
+ * Module cleanup: remove /proc entry and unmap GPIO registers
+ */
 static void __exit my_cleanup_module(void)
 {
-	printk("Leaving my driver!\n");
-	iounmap (gpio_register_base);	// Un map gpio
-	proc_remove (lll_proc); // Remove entry from proc fs
-	return;
+	pr_info("hello_mmio: exiting\n");
+	if (lll_proc)
+		proc_remove(lll_proc);
+	if (gpio_base)
+		iounmap(gpio_base);
 }
+
 module_init(my_init_module);
 module_exit(my_cleanup_module);
 
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
-MODULE_DESCRIPTION("Low level learning");
-MODULE_VERSION("0.01");
+MODULE_DESCRIPTION("Low level learning - MMIO GPIO example");
+MODULE_VERSION("0.02");
