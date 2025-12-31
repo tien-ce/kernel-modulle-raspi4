@@ -1,0 +1,5 @@
+# Binaries and objects generated from kernel module compilation
+*.o
+*.ko
+*.cmd
+*.mod.c
