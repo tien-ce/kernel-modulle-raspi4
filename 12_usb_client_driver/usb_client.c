@@ -28,7 +28,7 @@ static int lsmy_usb_probe(struct usb_interface *interface, const struct usb_devi
 /* Called when the USB device is unplugged */
 static void lsmy_usb_disconnect(struct usb_interface *interface)
 {
-	printk (KERN_INFO, "LSMY-UART-TTL driver removed");
+	printk (KERN_INFO "LSMY-UART-TTL driver removed\n");
 }
 
 /* Driver registration structure */
@@ -44,16 +44,20 @@ static int __init lsmy_init(void){
 	printk (KERN_INFO "Constor of driver");
 	printk (KERN_INFO "\t Register driver with kernel");
 	ret = usb_register(&lsmy_usb_driver);
-	printk (KERN_INFO "\t Registation is complete");
+	printk (KERN_INFO "\t Registation is complete\n");
 	return ret;
 }
 
 static void __exit lsmy_exit (void){
 	printk(KERN_INFO "\t Deconstructor of lsmy-driver");
-	usb_deregister(lsmy_usb_driver);
+	usb_deregister(&lsmy_usb_driver);
 	printk (KERN_INFO "\t Unregistation is complete\n");
-	printk (KERN_INFO, "LSMY-driver: Goodbye, cruel world");
+	printk (KERN_INFO "LSMY-driver: Goodbye, cruel world\n");
 }
+
+module_init(lsmy_init);
+module_exit(lsmy_exit);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Vantien");
 MODULE_DESCRIPTION("USB Auto-load Probe Driver");
