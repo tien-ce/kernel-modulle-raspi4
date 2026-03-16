@@ -9,3 +9,6 @@
 # clangd
 *.cache/
 compile_commands.json
+
+# devtool
+*oe-*
