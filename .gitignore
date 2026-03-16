@@ -6,3 +6,6 @@
 *.mod.c
 *.order
 *.symvers
+# clangd
+*.cache/
+compile_commands.json
