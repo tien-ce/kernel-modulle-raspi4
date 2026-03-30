@@ -1,4 +1,4 @@
-obj-m += usb_client.o
+obj-m += usb-skeleton.o
 SRC := $(shell pwd)
 
 all:
