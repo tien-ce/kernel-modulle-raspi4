@@ -12,3 +12,6 @@ compile_commands.json
 
 # devtool
 *oe-*
+
+# Vim
+*.c.swp
