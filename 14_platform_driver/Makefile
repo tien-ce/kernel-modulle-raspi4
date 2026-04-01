@@ -7,7 +7,8 @@ prepare:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) O=$(KERNEL_OUT) modules_prepare
 
 clean:
-	rm *.order *.symvers *.mod* *.o *.ko 
+	rm *.ko 
 
 host:
 	make -C $(HOST_KERN_DIR) M=$(PWD) modules
+	rm *.order *.symvers *.mod*  && rm *.o
