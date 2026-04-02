@@ -134,7 +134,9 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 			goto out;
 	 }
 	 /* 2 Allocate and set all zero private data (using in file opration) */
-	 dev_data = kzalloc(sizeof(struct pcdev_private_data), GFP_KERNEL); 
+	 // dev_data = kzalloc(sizeof(struct pcdev_private_data), GFP_KERNEL); 
+	 // Using device resouce managed
+	 dev_data = devm_kzalloc(&pdev->dev,sizeof(struct pcdev_private_data), GFP_KERNEL); 
 	 if(!dev_data)
 	 {
 			pr_info("No platform data\n");
@@ -159,7 +161,8 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	  * using size information from the platform data 
 	  * buffer is one fied in device private data
 	  * */
-	 dev_data->buffer = kzalloc (dev_data->pdata.size, GFP_KERNEL);
+	 //dev_data->buffer = kzalloc (dev_data->pdata.size, GFP_KERNEL);
+	 dev_data->buffer = devm_kzalloc (&pdev->dev,dev_data->pdata.size, GFP_KERNEL);
 	 if (!dev_data->buffer){
 		 pr_err("Cannot allocate memory\n");
 		 reval = -ENOMEM;
@@ -195,10 +198,10 @@ free_buffer:
 	 /* Free memory allocated for buffer,
 	  * that is one fied in private data strcuture
 	  * */
-	 kfree(dev_data->buffer);
+	 devm_kfree(&pdev->dev,dev_data->buffer);
 free_private_data: 
 	 /* free memory allocated for private data */
-	 kfree(dev_data);
+	 devm_kfree(&pdev->dev,dev_data);
 out:
 	 pr_info("Device probe failed\n");
 	 return reval;
@@ -212,9 +215,6 @@ static void pcd_platform_driver_remove(struct platform_device *pdev){
 	device_destroy(pcdrv_data.pcd_class, dev_data->dev_num);
 	/* 3. Remove character device */
 	cdev_del(&dev_data->cdev);
-	/* 4. Free the memory held by device */
-	kfree(dev_data->buffer);
-    kfree(dev_data);	
 	pcdrv_data.total_devices--;
 	pr_info("Device removed\n");
 }

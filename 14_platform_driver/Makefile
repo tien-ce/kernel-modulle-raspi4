@@ -1,4 +1,5 @@
 obj-m += pcd_device_setup.o
+obj-m += pcd_platform_driver.o
 SRC := $(shell pwd)
 HOST_KERN_DIR = /lib/modules/$(shell uname -r)/build
 all:
