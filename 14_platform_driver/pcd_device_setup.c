@@ -35,7 +35,7 @@ struct pcdev_platform_data pcdev_pdata[4] = {
 
 /* 1. Create platform devices */
 struct platform_device platform_pcdev_1 = {
-	.name = "pseudo-char-device",
+	.name = "pcdev-A1x",
 	.id = 0,
 	.dev = {
 		.platform_data = &pcdev_pdata[0],
@@ -44,7 +44,7 @@ struct platform_device platform_pcdev_1 = {
 };
 
 struct platform_device platform_pcdev_2 = {
-	.name = "pseudo-char-device",
+	.name = "pcdev-B1x",
 	.id = 1,
 	.dev = {
 		.platform_data = &pcdev_pdata[1],
@@ -53,7 +53,7 @@ struct platform_device platform_pcdev_2 = {
 };
 
 struct platform_device platform_pcdev_3 = {
-	.name = "pseudo-char-device",
+	.name = "pcdev-C1x",
 	.id = 3,
 	.dev = {
 		.platform_data = &pcdev_pdata[2],
@@ -62,7 +62,7 @@ struct platform_device platform_pcdev_3 = {
 };
 
 struct platform_device platform_pcdev_4 = {
-	.name = "pseudo-char-device",
+	.name = "pcdev-D1x",
 	.id = 4,
 	.dev = {
 		.platform_data = &pcdev_pdata[3],

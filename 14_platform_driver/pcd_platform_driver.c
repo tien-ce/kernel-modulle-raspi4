@@ -6,7 +6,8 @@
 #include <linux/cdev.h>
 #include <linux/device.h> //Sysfs create device
 #include <linux/uaccess.h> // For copy_to , from _user
-#include <linux/slab.h>
+#include <linux/slab.h> // Malloc
+#include <linux/mod_devicetable.h> // id_table
 #include "platform.h"
 #undef pr_fmt
 #define pr_fmt(fmt) "%s: " fmt,__func__
@@ -28,8 +29,35 @@ static int pcd_release(struct inode *inode, struct file *filp);
 /* Helper Function Prototype */
 static int check_permission(int dev_per, int acc_mode);
 
+struct device_config
+{
+	int item1;
+	int item2;
+};
 
+enum pcdev_names{
+	PCDEVA1X,
+	PCDEVB1X,
+	PCDEVC1X,
+	PCDEVD1X,
+};
 
+struct device_config pcdev_config[] =
+{
+	[PCDEVA1X] = {.item1 = 60, .item2 = 21},
+	[PCDEVB1X] = {.item1 = 60, .item2 = 22},
+	[PCDEVC1X] = {.item1 = 60, .item2 = 23},
+	[PCDEVD1X] = {.item1 = 60, .item2 = 24},
+};
+
+/* Platform matching */
+struct platform_device_id pcdev_ids[] =
+{
+	[0] = {.name = "pcdev-A1x", .driver_data = PCDEVA1X},
+	[1] = {.name = "pcdev-B1x", .driver_data = PCDEVB1X},
+	[2] = {.name = "pcdev-C1x", .driver_data = PCDEVC1X},
+	{} // NULL terminated
+};
 /* Using to interact with user space */
 struct file_operations pcd_fops = {
     .open = pcd_open,
@@ -46,7 +74,8 @@ struct platform_driver pcd_platform_driver = {
 	.remove = pcd_platform_driver_remove,
 	.driver = {
 		.name = "pseudo-char-device"
-	}
+	},
+	.id_table = pcdev_ids
 };
 
 /* 
@@ -157,6 +186,7 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	 pr_info("Device serial number = %s\n", dev_data->pdata.serial_number);
 	 pr_info("Device size = %d\n", dev_data->pdata.size);
 	 pr_info("Device permission = %d\n", dev_data->pdata.perm);
+	 pr_info("Config item 2 = %d", pcdev_config[pdev->id_entry->driver_data].item2); // Get driver data (Create in id table)
 	 /* 4 Dynamically allocate memory for the device buffer
 	  * using size information from the platform data 
 	  * buffer is one fied in device private data
@@ -180,7 +210,7 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 		 goto free_buffer;
 	 }
 	 /* 7 Create device file for the detected platform device */
-	 dev_data->pcd_device = device_create(pcdrv_data.pcd_class,NULL,dev_data->dev_num,NULL,"pcdev-%d",MINOR(dev_data->dev_num));
+	 dev_data->pcd_device = device_create(pcdrv_data.pcd_class,NULL,dev_data->dev_num,NULL,pdev->name);
 	 if (IS_ERR(dev_data->pcd_device))
 	 {
 		 pr_err ("Device register failed with sysfs\n");
