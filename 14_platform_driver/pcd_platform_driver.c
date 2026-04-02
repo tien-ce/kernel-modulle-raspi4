@@ -188,7 +188,7 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	 pr_info("Device permission = %d\n", dev_data->pdata.perm);
 	 pr_info("Config item 2 = %d", pcdev_config[pdev->id_entry->driver_data].item2); // Get driver data (Create in id table)
 	 /* 4 Dynamically allocate memory for the device buffer
-	  * using size information from the platform data 
+	  * using size information from the platform data core dumped
 	  * buffer is one fied in device private data
 	  * */
 	 //dev_data->buffer = kzalloc (dev_data->pdata.size, GFP_KERNEL);
@@ -196,7 +196,7 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	 if (!dev_data->buffer){
 		 pr_err("Cannot allocate memory\n");
 		 reval = -ENOMEM;
-		 goto free_private_data;
+		 goto out;
 	 }
 	 /* 5 Get the device number*/
 	 dev_t base = pcdrv_data.device_num_base;
@@ -207,9 +207,9 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	 reval = cdev_add(&dev_data->cdev,dev_data->dev_num,1);
 	 if(reval < 0){
 		 pr_err("Cdev add failed\n");
-		 goto free_buffer;
+		 goto out;
 	 }
-	 /* 7 Create device file for the detected platform device */
+	 /* 7 Create device file (annouce for sysfs) for the detected platform device */
 	 dev_data->pcd_device = device_create(pcdrv_data.pcd_class,NULL,dev_data->dev_num,NULL,pdev->name);
 	 if (IS_ERR(dev_data->pcd_device))
 	 {
@@ -224,14 +224,6 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 /* Error hadling */
 cdev_del:
 	 cdev_del(&dev_data->cdev);
-free_buffer:
-	 /* Free memory allocated for buffer,
-	  * that is one fied in private data strcuture
-	  * */
-	 devm_kfree(&pdev->dev,dev_data->buffer);
-free_private_data: 
-	 /* free memory allocated for private data */
-	 devm_kfree(&pdev->dev,dev_data);
 out:
 	 pr_info("Device probe failed\n");
 	 return reval;
