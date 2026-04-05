@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+&uart2 {
+	/* NO RS485 sensor */
+	no_sensor {
+		compatiable = "rs485,no_sensor";
+	};
+	pm_sensor {
+		compatiable = "rs485,pm_sensor";
+	};
+};
