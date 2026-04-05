@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Copyright (C) 2026 Nguyen Van Tien <tien.nguyen@hcmut.edu.vn>
+ * * This driver is part of a graduation project at HCMUT.
+ * It implements a Platform Driver for a Pseudo Character Device (PCD)
+ * with Device Tree support for the Raspberry Pi 4.
+ *
+ * Author: Nguyen Van Tien (Computer Engineering, HCMUT)
+ */
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -369,5 +378,7 @@ module_init(pcd_module_init);
 module_exit(pcd_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("John Madieu");
-MODULE_DESCRIPTION("My platform Hello World module");
+MODULE_AUTHOR("Nguyen Van Tien <tien.nguyen@hcmut.edu.vn>");
+MODULE_DESCRIPTION("A platform driver for PCD with Device Tree support");
+MODULE_VERSION("1.1");
+MODULE_INFO(board, "Raspberry Pi 4 B");
