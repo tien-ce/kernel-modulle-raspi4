@@ -84,18 +84,6 @@ static struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev
 	return pdata;
 }
 
-/* -------------------------------------------------------------------------
- * LEGACY PLATFORM SECTION
- * ------------------------------------------------------------------------- */
-
-/* Platform matching */
-struct platform_device_id pcdev_ids[] =
-{
-	[0] = {.name = "pcdev-A1x", .driver_data = PCDEVA1X},
-	[1] = {.name = "pcdev-B1x", .driver_data = PCDEVB1X},
-	[2] = {.name = "pcdev-C1x", .driver_data = PCDEVC1X},
-	{} // NULL terminated
-};
 
 /* -------------------------------------------------------------------------
  * CORE DRIVER IMPLEMENTATION
@@ -109,7 +97,6 @@ struct platform_driver pcd_platform_driver = {
 		.name = "pseudo-char-device",
 		.of_match_table =  org_pcdev_dt_match
 	},
-	.id_table = pcdev_ids
 };
 
 /* Platform driver callback implementation */
@@ -124,34 +111,18 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 	 const struct of_device_id *match;
 	 uintptr_t driver_data; 
 
-	 /* 1. Get platform data */
-	 // Try to get from device tree first
+	 /* 1. Get platform data (Only with device tree)*/
 	 pdata = pcdev_get_platdata_from_dt(dev);
-	 if(IS_ERR(pdata))
+	 if(IS_ERR(pdata) || !pdata)
 	 {
 		 reval = PTR_ERR(pdata); // Pointer to error
 		 goto out;
 	 }
-	 if (!pdata)
-	 {
-		 dev_info(dev,"The device is not associated with device tree");
-		 // Try if device is registed like in device setup (Check 15.../device_setup.c)
-		 // pdata = pdev->dev.platform_data;
-		 pdata = (struct pcdev_platform_data*)dev_get_platdata(dev); // Same with above line
-		 if (!pdata)
-		 {
-				dev_info(dev,"No platform data\n"); 
-				reval = -EINVAL;
-				goto out;
-		 }
-		 driver_data = pdev->id_entry->driver_data; 
-	 }
 	 else
 	 {
-		 // Get driver data if device is not registered through device tree
 	     match = of_match_device(dev->driver->of_match_table, dev);
 		 /** pdev->dev.driver->of_match_table is just the of_device_id[] we use to register this driver with device 
-		  * of_match_device will return what of_device_id is matching with our driver (because we are register with multiple devices)
+		  * of_match_device will return the reference what of_device_id is matching with our driver (because we are register with multiple devices)
 		  * **/ 
 		 driver_data = (uintptr_t)(match->data);
 		 /** Or use this instead
