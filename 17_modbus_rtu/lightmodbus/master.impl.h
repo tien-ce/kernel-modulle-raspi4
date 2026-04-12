@@ -1,0 +1,210 @@
+/*
+    liblightmodbus - a lightweight, header-only, cross-platform Modbus RTU/TCP library
+    Original work Copyright (C) 2021 Jacek Wieczorek <mrjjot@gmail.com>
+
+    Modifications:
+    Copyright (C) 2026 Văn Tiến <tien11102004@gmail.com>
+    - Removed RTU and TCP layers to focus strictly on the PDU/Application layer.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+#ifndef LIGHTMODBUS_MASTER_IMPL_H
+#define LIGHTMODBUS_MASTER_IMPL_H
+
+#include "master.h"
+#include "master_func.h"
+
+/**
+	\file master.impl.h
+	\brief Master's types and basic functions (implementation)
+*/
+
+/**
+	\brief Default array of supported functions. Length is stored in
+	modbusMasterDefaultFunctionCount.
+
+	Contents are controlled by defining `LIGHTMODBUS_FxxM` macros.
+*/
+ModbusMasterFunctionHandler modbusMasterDefaultFunctions[] =
+{
+#if defined(LIGHTMODBUS_F01M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{1, modbusParseResponse01020304},
+#endif
+
+#if defined(LIGHTMODBUS_F02M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{2, modbusParseResponse01020304},
+#endif
+
+#if defined(LIGHTMODBUS_F03M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{3, modbusParseResponse01020304},
+#endif
+
+#if defined(LIGHTMODBUS_F04M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{4, modbusParseResponse01020304},
+#endif
+
+#if defined(LIGHTMODBUS_F05M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{5, modbusParseResponse0506},
+#endif
+
+#if defined(LIGHTMODBUS_F06M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{6, modbusParseResponse0506},
+#endif
+
+#if defined(LIGHTMODBUS_F15M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{15, modbusParseResponse1516},
+#endif
+
+#if defined(LIGHTMODBUS_F16M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{16, modbusParseResponse1516},
+#endif
+
+#if defined(LIGHTMODBUS_F22M) || defined(LIGHTMODBUS_MASTER_FULL)
+	{22, modbusParseResponse22},
+#endif
+
+	// Guard - prevents 0 size array
+	{0, NULL}
+};
+
+/**
+	\brief Stores length of modbusMasterDefaultFunctions array
+*/
+const uint8_t modbusMasterDefaultFunctionCount = sizeof(modbusMasterDefaultFunctions) / sizeof(modbusMasterDefaultFunctions[0]) - 1;
+
+/**
+	\brief Initializes a ModbusMaster struct
+	\param status ModbusMaster struct to be initialized
+	\param dataCallback Callback function for handling incoming data (may be required by used parsing functions)
+	\param exceptionCallback Callback function for handling slave exceptions (optional)
+	\param allocator Memory allocator to be used (see \ref modbusDefaultAllocator()) (required)
+	\param functions Pointer to an array of supported function handlers (required).
+		The lifetime of this array must not be shorter than the lifetime of the master.
+	\param functionCount Number of elements in the `functions` array (required)
+	\returns MODBUS_NO_ERROR() on success
+
+	\see modbusDefaultAllocator()
+	\see modbusMasterDefaultFunctions
+*/
+LIGHTMODBUS_RET_ERROR modbusMasterInit(
+	ModbusMaster *status,
+	ModbusDataCallback dataCallback,
+	ModbusMasterExceptionCallback exceptionCallback,
+	ModbusAllocator allocator,
+	const ModbusMasterFunctionHandler *functions,
+	uint8_t functionCount)
+{
+	status->dataCallback = dataCallback;
+	status->exceptionCallback = exceptionCallback;
+	status->functions = functions;
+	status->functionCount = functionCount;
+	status->context = NULL;
+
+	return modbusBufferInit(&status->request, allocator);
+}
+
+/**
+	\brief Deinitializes a ModbusMaster struct
+	\param status ModbusMaster struct to be destroyed
+	\note This does not free the memory pointed to by the `status` pointer and
+	only cleans up the interals ofthe ModbusMaster struct.
+*/
+void modbusMasterDestroy(ModbusMaster *status)
+{
+	modbusBufferDestroy(&status->request, modbusMasterGetUserPointer(status));
+}
+
+/**
+	\brief Begins a PDU-only request
+	\returns MODBUS_NO_ERROR()
+*/
+LIGHTMODBUS_RET_ERROR modbusBeginRequestPDU(ModbusMaster *status)
+{
+	modbusBufferModePDU(&status->request);
+	return MODBUS_NO_ERROR();
+}
+
+/**
+	\brief Finalizes a PDU-only request
+	\returns MODBUS_NO_ERROR()
+*/
+LIGHTMODBUS_RET_ERROR modbusEndRequestPDU(ModbusMaster *status)
+{
+	return MODBUS_NO_ERROR();
+}
+
+/**
+	\brief Parses a PDU section of a slave response
+	\param address Value to be reported as slave address
+	\param request Pointer to the PDU section of the request frame
+	\param requestLength Length of the request PDU (valid range: 1 - 253)
+	\param response Pointer to the PDU section of the response
+	\param responseLength Length of the response PDU (valid range: 1 - 253)
+	\returns MODBUS_REQUEST_ERROR(LENGTH) if the request has invalid length
+	\returns MODBUS_RESPONSE_ERROR(LENGTH) if the response has invalid length
+	\returns MODBUS_RESPONSE_ERROR(FUNCTION) if the function code in request doesn't match the one in response
+	\returns MODBUS_GENERAL_ERROR(FUNCTION) if the function code is not supported
+	\returns Result from the parsing function on success (modbusParseRequest*() functions)
+*/
+LIGHTMODBUS_RET_ERROR modbusParseResponsePDU(
+	ModbusMaster *status,
+	uint8_t address,
+	const uint8_t *request,
+	uint8_t requestLength,
+	const uint8_t *response,
+	uint8_t responseLength)
+{
+	// Check if lengths are ok
+	if (!requestLength || requestLength > MODBUS_PDU_MAX)
+		return MODBUS_REQUEST_ERROR(LENGTH);
+	if (!responseLength || responseLength > MODBUS_PDU_MAX)
+		return MODBUS_RESPONSE_ERROR(LENGTH);
+
+	uint8_t function = response[0];
+
+	// Handle exception frames
+	if (function & 0x80 && responseLength == 2)
+	{
+		if (status->exceptionCallback)
+			status->exceptionCallback(
+				status,
+				address,
+				function & 0x7f,
+				(ModbusExceptionCode) response[1]);
+
+		return MODBUS_NO_ERROR();
+	}
+
+	// Check if function code matches the one in request frame
+	if (function != request[0])
+		return MODBUS_RESPONSE_ERROR(FUNCTION);
+
+	// Find a parsing function
+	for (uint16_t i = 0; i < status->functionCount; i++)
+		if (function == status->functions[i].id)
+			return status->functions[i].ptr(
+				status,
+				address,
+				function,
+				request,
+				requestLength,
+				response,
+				responseLength);
+
+	// No matching function handler
+	return MODBUS_GENERAL_ERROR(FUNCTION);
+}
+
+
+#endif
