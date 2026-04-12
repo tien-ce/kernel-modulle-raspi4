@@ -1,0 +1,33 @@
+/dts-v1/;
+/plugin/;
+/{
+	fragment@0  {
+		target-path = "/";
+		__overlay__ {
+			pcdev-1 {
+				compatible = "pcdev-A1x";
+				org,size = <512>;
+				org,device-serial-num = "PCDEV1AB1";
+				org,perm = <0x11>;
+			};
+			pcdev-2 {
+				compatible = "pcdev-B1x";
+				org,size = <1024>;
+				org,device-serial-num = "PCDEV1AB2";
+				org,perm = <0x01>;
+			};
+			pcdev-3 {
+				compatible = "pcdev-C1x";
+				org,size = <512>;
+				org,device-serial-num = "PCDEV1AB3";
+				org,perm = <0x11>;
+			};
+			pcdev-4 {
+				compatible = "pcdev-D1x";
+				org,size = <256>;
+				org,device-serial-num = "PCDEV1AB4";
+				org,perm = <0x10>;
+			};
+		};
+	};
+};
