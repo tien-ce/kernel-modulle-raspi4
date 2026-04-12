@@ -144,11 +144,11 @@ static int pcd_platform_driver_probe (struct platform_device *pdev)
 				reval = -EINVAL;
 				goto out;
 		 }
+		 // Get driver data if device is not registered through device tree
 		 driver_data = pdev->id_entry->driver_data; 
 	 }
 	 else
 	 {
-		 // Get driver data if device is not registered through device tree
 	     match = of_match_device(dev->driver->of_match_table, dev);
 		 /** pdev->dev.driver->of_match_table is just the of_device_id[] we use to register this driver with device 
 		  * of_match_device will return what of_device_id is matching with our driver (because we are register with multiple devices)
