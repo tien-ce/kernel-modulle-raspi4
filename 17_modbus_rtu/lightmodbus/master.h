@@ -95,6 +95,8 @@ void modbusMasterDestroy(ModbusMaster *status);
 
 LIGHTMODBUS_RET_ERROR modbusBeginRequestPDU(ModbusMaster *status);
 LIGHTMODBUS_RET_ERROR modbusEndRequestPDU(ModbusMaster *status);
+LIGHTMODBUS_RET_ERROR modbusBeginRequestRTU(ModbusMaster *status);
+LIGHTMODBUS_RET_ERROR modbusEndRequestRTU(ModbusMaster *status, uint8_t address);
 
 LIGHTMODBUS_RET_ERROR modbusParseResponsePDU(
 	ModbusMaster *status,
@@ -105,13 +107,6 @@ LIGHTMODBUS_RET_ERROR modbusParseResponsePDU(
 	uint8_t responseLength);
 
 LIGHTMODBUS_RET_ERROR modbusParseResponseRTU(
-	ModbusMaster *status,
-	const uint8_t *request,
-	uint16_t requestLength,
-	const uint8_t *response,
-	uint16_t responseLength);
-
-LIGHTMODBUS_RET_ERROR modbusParseResponseTCP(
 	ModbusMaster *status,
 	const uint8_t *request,
 	uint16_t requestLength,

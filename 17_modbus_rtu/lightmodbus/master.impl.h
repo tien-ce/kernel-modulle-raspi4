@@ -145,6 +145,34 @@ LIGHTMODBUS_RET_ERROR modbusEndRequestPDU(ModbusMaster *status)
 }
 
 /**
+	\brief Begins a RTU request
+	\returns MODBUS_NO_ERROR()
+*/
+LIGHTMODBUS_RET_ERROR modbusBeginRequestRTU(ModbusMaster *status)
+{
+	modbusBufferModeRTU(&status->request);
+	return MODBUS_NO_ERROR();
+}
+
+/**
+	\brief Finalizes a Modbus RTU request
+	\returns MODBUS_GENERAL_ERROR(LENGTH) if the allocated frame has invalid length
+	\returns MODBUS_NO_ERROR() on success
+*/
+LIGHTMODBUS_RET_ERROR modbusEndRequestRTU(ModbusMaster *status, uint8_t address)
+{
+	ModbusError err = modbusPackRTU(
+		&status->request.data[0],
+		status->request.length,
+		address);
+
+	if (err != MODBUS_OK)
+		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_GENERAL, err);
+
+	return MODBUS_NO_ERROR();
+}
+
+/**
 	\brief Parses a PDU section of a slave response
 	\param address Value to be reported as slave address
 	\param request Pointer to the PDU section of the request frame
@@ -206,5 +234,73 @@ LIGHTMODBUS_RET_ERROR modbusParseResponsePDU(
 	return MODBUS_GENERAL_ERROR(FUNCTION);
 }
 
+
+/**
+	\brief Parses a Modbus RTU slave response
+	\param request Pointer to the request frame
+	\param requestLength Length of the request (valid range: 4 - 256)
+	\param response Pointer to the response frame
+	\param responseLength Length of the response (valid range: 4 - 256)
+	\returns MODBUS_REQUEST_ERROR(LENGTH) if the request has invalid length
+	\returns MODBUS_RESPONSE_ERROR(LENGTH) if the response has invalid length
+	\returns MODBUS_REQUEST_ERROR(CRC) if the request CRC is invalid
+	\returns MODBUS_RESPONSE_ERROR(CRC) if the response CRC is invalid
+	\returns MODBUS_RESPONSE_ERROR(ADDRESS) if the address is 0 or if request/response addressess don't match
+	\returns Result of modbusParseResponsePDU() otherwise
+*/
+LIGHTMODBUS_RET_ERROR modbusParseResponseRTU(
+	ModbusMaster *status,
+	const uint8_t *request,
+	uint16_t requestLength,
+	const uint8_t *response,
+	uint16_t responseLength)
+{
+	// Unpack request
+	const uint8_t *requestPDU = NULL;
+	uint16_t requestPDULength = 0;
+	uint8_t requestAddress    = 0;
+	ModbusError err = modbusUnpackRTU(
+		request,
+		requestLength,
+#ifdef LIGHTMODBUS_MASTER_OMIT_REQUEST_CRC
+		0,
+#else
+		1,
+#endif
+		&requestPDU,
+		&requestPDULength,
+		&requestAddress);
+
+	if (err != MODBUS_OK)
+		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_REQUEST, err);
+
+	// Unpack response
+	const uint8_t *responsePDU;
+	uint16_t responsePDULength;
+	uint8_t responseAddress;
+	err = modbusUnpackRTU(
+		response,
+		responseLength,
+		1,
+		&responsePDU,
+		&responsePDULength,
+		&responseAddress);
+
+	if (err != MODBUS_OK)
+		return MODBUS_MAKE_ERROR(MODBUS_ERROR_SOURCE_RESPONSE, err);
+
+	// Check addresses - response to a broadcast request or bad response address
+	if (requestAddress == 0 || requestAddress != responseAddress)
+		return MODBUS_RESPONSE_ERROR(ADDRESS);
+
+	// Parse the PDU itself
+	return modbusParseResponsePDU(
+		status,
+		requestAddress,
+		requestPDU,
+		requestPDULength,
+		responsePDU,
+		responsePDULength);
+}
 
 #endif

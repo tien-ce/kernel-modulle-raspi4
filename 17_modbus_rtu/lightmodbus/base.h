@@ -32,6 +32,11 @@
 #define MODBUS_PDU_MIN 1   //!< Minimum length of a PDU
 #define MODBUS_PDU_MAX 253 //!< Maximum length of a PDU
 
+#define MODBUS_RTU_ADU_MIN     4   //!< Minimum length of ADU in Modbus RTU
+#define MODBUS_RTU_ADU_MAX     256 //!< Maximum length of ADU in Modbus RTU
+#define MODBUS_RTU_ADU_PADDING 3   //!< Number of extra bytes added to the PDU in Modbus RTU
+#define MODBUS_RTU_PDU_OFFSET  1   //!< Offset of PDU relative to the frame beginning in Modbus RTU
+
 /**
 	\def LIGHTMODBUS_RET_ERROR
 	\brief Return type for library functions returning ModbusErrorInfo that should be handled properly.
@@ -183,6 +188,12 @@ typedef enum ModbusError
 	MODBUS_ERROR_RANGE,
 
 	/**
+		\brief CRC invalid
+		\note Only in Modbus RTU
+	*/
+	MODBUS_ERROR_CRC,
+
+	/**
 		\brief Invalid slave address
 	*/
 	MODBUS_ERROR_ADDRESS,
@@ -276,6 +287,14 @@ static inline void modbusBufferModePDU(ModbusBuffer *buffer)
 	buffer->pduOffset = 0;
 }
 
+/**
+	\brief Prepares buffer to store a Modbus RTU message
+*/
+static inline void modbusBufferModeRTU(ModbusBuffer *buffer)
+{
+	buffer->padding = MODBUS_RTU_ADU_PADDING;
+	buffer->pduOffset = MODBUS_RTU_PDU_OFFSET;
+}
 
 /**
 	\brief Reads n-th bit from an array
@@ -425,6 +444,69 @@ LIGHTMODBUS_WARN_UNUSED static inline ModbusError modbusGetRequestError(ModbusEr
 LIGHTMODBUS_WARN_UNUSED static inline ModbusError modbusGetResponseError(ModbusErrorInfo err)
 {
 	return err.source == MODBUS_ERROR_SOURCE_RESPONSE ? modbusGetErrorCode(err) : MODBUS_OK;
+}
+
+/**
+	\brief Unpacks data from a Modbus RTU frame and optionally checks CRC
+	\param frame Pointer to the frame data
+	\param length Length of the frame (valid range: 4 - 256)
+	\param checkCRC Controls whether the CRC of the frame should be checked
+	\param pdu Output: pointer to the PDU
+	\param pduLength Output: length of the PDU
+	\param address Output: Slave address
+	\returns MODBUS_OK on success
+	\returns MODBUS_ERROR_LENGTH if the length of the frame is invalid
+	\returns MODBUS_ERROR_CRC if the CRC is incorrect
+*/
+LIGHTMODBUS_WARN_UNUSED LIGHTMODBUS_ALWAYS_INLINE static inline ModbusError modbusUnpackRTU(
+	const uint8_t *frame,
+	uint16_t length,
+	uint8_t checkCRC,
+	const uint8_t **pdu,
+	uint16_t *pduLength,
+	uint8_t *address)
+{
+	// Check length
+	if (length < MODBUS_RTU_ADU_MIN || length > MODBUS_RTU_ADU_MAX)
+		return MODBUS_ERROR_LENGTH;
+
+	// Extract address
+	*address = frame[0];
+
+	// Check CRC
+	if (checkCRC && modbusCRC(frame, length - 2) != modbusRLE(frame + length - 2))
+		return MODBUS_ERROR_CRC;
+
+	*pdu = frame + MODBUS_RTU_PDU_OFFSET;
+	*pduLength = length - MODBUS_RTU_ADU_PADDING;
+
+	return MODBUS_OK;
+}
+
+/**
+	\brief Sets up address and CRC in a Modbus RTU frame
+	\param frame Pointer to the frame data
+	\param length Length of the frame (valid range: 4 - 256)
+	\param address Address of the slave
+	\returns MODBUS_OK on success
+	\returns MODBUS_ERROR_LENGTH if the length of the frame is invalid
+*/
+LIGHTMODBUS_WARN_UNUSED LIGHTMODBUS_ALWAYS_INLINE static inline ModbusError modbusPackRTU(
+	uint8_t *frame,
+	uint16_t length,
+	uint8_t address)
+{
+	// Check length
+	if (length < MODBUS_RTU_ADU_MIN || length > MODBUS_RTU_ADU_MAX)
+		return MODBUS_ERROR_LENGTH;
+
+	// Write address
+	frame[0] = address;
+
+	// Compute and write CRC
+	modbusWLE(&frame[length - 2], modbusCRC(frame, length - 2));
+	
+	return MODBUS_OK;
 }
 
 #endif
