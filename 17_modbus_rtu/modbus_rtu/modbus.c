@@ -23,9 +23,10 @@
 #define LIGHTMODBUS_IMPL
 
 #include "lightmodbus/lightmodbus.h"
-#include "modbus.h"
-#include <stdio.h>
-
+#include "Include/port.h"
+#include "Include/mb.h"
+#include "Include/mbport.h"
+#include "Include/mbrtu.h"
 #define MB_ADDRESS_BROADCAST 0
 #define MAX_PDU_SIZE 253
 /* Global variable
@@ -39,7 +40,8 @@ static UCHAR    ucMBAddress;
 /*
  * @}
  * */
-ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArgs *args)
+
+static ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArgs *args)
 {
 	char typechar = '?';
 	switch (args->type)
@@ -49,7 +51,7 @@ ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArg
 		case MODBUS_COIL: typechar = 'C'; break;
 		case MODBUS_DISCRETE_INPUT: typechar = 'D'; break;
 	}
-	printf(
+	pr_info(
 		"F: %03d, T: %c, ID: %03d, VAL: 0x%04x (%d)\n",
 		args->function,
 		typechar,
@@ -59,9 +61,9 @@ ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArg
 	return MODBUS_OK;
 }
 
-ModbusError exceptionCallback(const ModbusMaster *master, uint8_t address, uint8_t function, ModbusExceptionCode code)
+static ModbusError exceptionCallback(const ModbusMaster *master, uint8_t address, uint8_t function, ModbusExceptionCode code)
 {
-	printf(
+	pr_info(
 		"EXCEPTION SLAVE: %03d, F: %03d, CODE: %03d\n",
 		address,
 		function,
@@ -70,7 +72,7 @@ ModbusError exceptionCallback(const ModbusMaster *master, uint8_t address, uint8
 	return MODBUS_OK;
 }
 
-void buildreq(ModbusMaster *master, int function, int startAddress, int quantity)
+static void buildreq(ModbusMaster *master, int function, int startAddress, int quantity)
 {
     switch (function)
     {
@@ -93,12 +95,12 @@ void buildreq(ModbusMaster *master, int function, int startAddress, int quantity
 
     if (!modbusIsOk(err))
     {
-        fprintf(stderr, "Error building request:\n");
+        pr_err("Error building request:\n");
     }
 }
 
 
-eMBErrorCode eMBMasterPoll( void )
+static eMBErrorCode eMBMasterPoll( void )
 {
     UCHAR           pucMBFrame[MAX_PDU_SIZE];
     UCHAR           ucRcvAddress;
@@ -136,7 +138,7 @@ eMBErrorCode eMBMasterPoll( void )
 					// Handle parsing error
 				if (!modbusIsOk(err))
 				{
-					fprintf(stderr,"Response parsing error:\n");
+					pr_err("Response parsing error:\n");
 				}
 				break;
 
@@ -151,7 +153,7 @@ eMBErrorCode eMBMasterPoll( void )
     return eStatus;
 }
 
-bool ModbusInit(ULONG ulBaudRate, eMBParity eParity, UCHAR ucStopBits)
+bool ModbusInit(void)
 {
     /* Building modbus application layer using lightmodbus */
     ModbusErrorInfo err = modbusMasterInit(
@@ -165,14 +167,17 @@ bool ModbusInit(ULONG ulBaudRate, eMBParity eParity, UCHAR ucStopBits)
     if (!modbusIsOk(err)) return FALSE;
 
     /* Write and receive in link layer using modbus-rtu */
-    eMBErrorCode eStatus = eMBRTUInit(0, ulBaudRate, eParity, ucStopBits);
+    eMBErrorCode eStatus = eMBRTUInit(0, 0, 0, 0);
     if (eStatus != MB_ENOERR) return FALSE;
 
     eMBRTUStart();
     return TRUE;
 }
-
-void ModbusRun()
+void ModbusDestroy(void)
+{
+	modbusMasterDestroy(&master);
+}
+void ModbusRun(void)
 {
 	eMBMasterPoll();
 }
@@ -191,4 +196,3 @@ void ModbusSend(UCHAR Address, int function, int startAddress, int quantity)
         modbusMasterGetRequestLength(&master)
     );
 }
-
