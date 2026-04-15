@@ -162,7 +162,8 @@ eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength )
 		 */
 		*pusLength = ( USHORT )( usRcvBufferPos - MB_SER_PDU_PDU_OFF - MB_SER_PDU_SIZE_CRC );
 		 /* Copy from the start of the Modbus PDU to the caller. */
-		uiPortMemcpy(pucFrame,(ucRTUReBuf+MB_SER_PDU_ADDR_OFF),*(pusLength));
+		 /* PDU frame is star form 1, not 0 (RTU) padding */
+		uiPortMemcpy(pucFrame,(ucRTUReBuf+1),*(pusLength));
 	}
 	else
 	{
