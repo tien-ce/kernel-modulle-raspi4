@@ -46,6 +46,7 @@ struct of_device_id org_pcdev_dt_match[] =
 	{.compatible = "pcdev-D1x",.data = (void*)PCDEVD1X},
 	{}
 };
+MODULE_DEVICE_TABLE(of, org_pcdev_dt_match);
 
 static struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev)
 {

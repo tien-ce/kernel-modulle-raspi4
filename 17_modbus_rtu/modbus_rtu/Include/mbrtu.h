@@ -41,7 +41,8 @@ void            eMBRTUStop( void );
 eMBErrorCode    eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength );
 eMBErrorCode 	eMBRTUSend( UCHAR ucSlaveAddress, const UCHAR * pucFrame, USHORT usLength );
 BOOL            xMBRTUReceiveFSM( void );
-BOOL            xMBRTUTransmitFSM( void );
+BOOL			xMBRTUReceiveTrigger ( void );
+BOOL            xMBRTUTransmitSuccess( void );
 BOOL            xMBRTUTimerT15Expired( void );
 BOOL            xMBRTUTimerT35Expired( void );
 

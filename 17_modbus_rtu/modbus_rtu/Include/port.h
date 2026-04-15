@@ -50,12 +50,6 @@ typedef uint8_t         UINT8;
 #define FALSE           false
 #endif
 
-/* 
- * Bridge between app and link layer
- */ 
-void ModbusRun(void);
-void ModbusSend(UCHAR ucSlaveAddress, int function, int startAddress, int quantity);
-
 /* Port function using kernel memcpy */
 static inline UINT8 uiPortMemcpy(UCHAR *des, const UCHAR *src, UINT8 length)
 {

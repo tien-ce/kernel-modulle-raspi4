@@ -15,14 +15,15 @@ bool (*hrtimer_expired)(void);
 /**
  * @brief Timer callback handler triggered upon expiration.
  * @param timer: Pointer to the hrtimer structure that expired.
- * @return HRTIMER_RESTART to indicate the timer should auto-repeat.
+ * @return HRTIMER_NORESTART to indicate the timer shouldn't auto-repeat.
  */
 static enum hrtimer_restart test_hrtimer_handler(struct hrtimer *timer) {
     /* * Modbus RTU Logic: This signifies a T35 (3.5 char) silence has occurred.
      */
 	if (hrtimer_expired)
 		(void)hrtimer_expired();
-    return HRTIMER_RESTART;
+	pr_info("Timer is expired\n");
+    return HRTIMER_NORESTART;
 }
 
 /***************************************************************** 
@@ -34,8 +35,8 @@ static enum hrtimer_restart test_hrtimer_handler(struct hrtimer *timer) {
  */
 void timer_init(int usTimTimerout50us) 
 {
+	pr_info("Modbustimer init: %d * 50(us)\n",usTimTimerout50us);
     unsigned long timeout_us;
-
     /* Calculate the total silence interval in microseconds */
     timeout_us = (unsigned long)usTimTimerout50us * 50;
 

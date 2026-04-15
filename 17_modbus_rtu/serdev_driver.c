@@ -7,15 +7,15 @@
 /* -------------------------------------------------------------------------
  * Meta Information & Global Variables
  * ------------------------------------------------------------------------- */
-struct pcdrv_private_data pcdrv_data;
-/* Platform Driver Callback Prototypes */
-static int pcd_platform_driver_probe(struct platform_device *pdev);
-static void pcd_platform_driver_remove(struct platform_device *pdev);
-
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Van Tien");
 MODULE_DESCRIPTION("Persudo charater device deriver hadling mutiple devices");
 MODULE_VERSION("0.01");
+
+struct pcdrv_private_data pcdrv_data;
+/* Platform Driver Callback Prototypes */
+static int pcd_platform_driver_probe(struct platform_device *pdev);
+static void pcd_platform_driver_remove(struct platform_device *pdev);
 
 struct device_config pcdev_config[] =
 {
@@ -46,6 +46,7 @@ struct of_device_id org_pcdev_dt_match[] =
 	{.compatible = "pcdev-D1x",.data = (void*)PCDEVD1X},
 	{}
 };
+MODULE_DEVICE_TABLE(of, org_pcdev_dt_match);
 
 static struct pcdev_platform_data* pcdev_get_platdata_from_dt(struct device *dev)
 {
@@ -217,12 +218,18 @@ static void pcd_platform_driver_remove(struct platform_device *pdev){
 static int __init pcd_module_init (void)
 {
 	int reval;
+	/* 0.9 Register modbus controller */
+	printk("Register modbus contoller\n");
+	if(modbus_controller_register()) {
+		printk("modbus_controller - Error! Could not load driver\n");
+		goto out;	
+	}
 	/* 1 Dynamically allocate a device number for MAX_DEVICES*/
 	reval = alloc_chrdev_region(&pcdrv_data.device_num_base,0,MAX_DEVICES,"pcdevs");
 	if (reval < 0)
 	{
 		pr_err("Alloc chrdev failed\n");
-	    goto out;	
+	    goto un_modbus_controller;	
 	}
 
 	/* 2. Create device class under /sys/class */
@@ -245,6 +252,8 @@ destroy_class:
 	class_destroy(pcdrv_data.pcd_class);
 un_dev_number_region:
 	unregister_chrdev_region(pcdrv_data.device_num_base,MAX_DEVICES);	
+un_modbus_controller:
+	modbus_controller_unregister();
 out:
 	return reval;
 }
@@ -258,6 +267,10 @@ static void __exit pcd_module_exit (void)
 	/* 3 Unregister device number */
 	unregister_chrdev_region(pcdrv_data.device_num_base,MAX_DEVICES);	
 	pr_info("pcd platform driver unloaded\n");
+	/* 4 Unregister modbus controller (serdev device) */
+	printk("modbus_controller - Unload driver");
+	/* 5. Free memory allocated for modbus controller and master */
+	modbus_controller_unregister();
 }
 
 module_init(pcd_module_init);

@@ -9,6 +9,7 @@ my_modbus_module-objs := serdev_driver.o \
                          modbus_rtu/port_serial.o \
                          modbus_rtu/port_event.o \
                          modbus_rtu/port_timer.o \
+						 modbus_rtu/modbus.o \
                          modbus_rtu/mbcrc.o
 
 ARCH = arm64
@@ -23,7 +24,7 @@ prepare:
 	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) O=$(KERNEL_OUT) modules_prepare
 
 clean:
-	rm *.order *.symvers *.mod* *.o *.ko 
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERNEL_SRC) M=$(PWD) clean 
 
 host:
 	make -C $(HOST_KERN_DIR) M=$(PWD) modules

@@ -19,10 +19,9 @@ static void mb_event_tasklet_handler(struct tasklet_struct *t)
 BOOL xMBPortEventInit(void)
 {
     xEventInQueue = FALSE;
-    
     /* Initialize the tasklet */
     tasklet_setup(&mb_tasklet, mb_event_tasklet_handler);
-    
+	pr_info("Modbus Event: Init\n");
     return TRUE;
 }
 
@@ -59,4 +58,5 @@ BOOL xMBPortEventGet(eMBEventType *eEvent)
 void vMBPortEventDeinit(void)
 {
     tasklet_kill(&mb_tasklet);
+	pr_info("Modbus Event: Destroy\n");
 }

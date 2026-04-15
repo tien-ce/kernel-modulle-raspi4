@@ -33,25 +33,10 @@
 #include <linux/serdev.h>
 #define UNUSED(x) (void)(x)
 
-#define eMBPtoeSP(__eMBParity__)				(	((__eMBParity__) == MB_PAR_NONE) ? SERDEV_PARITY_NONE :\
-((__eMBParity__) == MB_PAR_ODD) ? SERDEV_PARITY_ODD :\
-													SERDEV_PARITY_EVEN	)
-
 BOOL xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity embparity, UCHAR ucStopBits)
 {
 	/* This funciton is not used */
-	register_modbus_callbacks(&xMBRTUTransmitFSM,&xMBRTUReceiveFSM);
-	return TRUE;
-}
-
-void vMBPortSerialEnable(BOOL rxEnable, BOOL txEnable)
-{
-	modbus_controller_enable(rxEnable,txEnable);
-}
-
-BOOL xMBPortSerialPutByte(CHAR byte)
-{
-	modbus_controller_write(byte);
+	register_modbus_callbacks(&xMBRTUTransmitSuccess,&xMBRTUReceiveTrigger);
 	return TRUE;
 }
 

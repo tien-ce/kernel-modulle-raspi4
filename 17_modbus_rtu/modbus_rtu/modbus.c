@@ -33,18 +33,20 @@
  * @{
  */
 
-ModbusMaster master;
+ModbusMaster	master;
 ModbusErrorInfo err = MODBUS_NO_ERROR();
-static UCHAR    ucMBAddress;
-
+eMasterType		master_state = EM_IDLE;
+static char ucMBAddress;
+static int  iMBTimeout;
+static int baudrate; // Using to calculate the timer 
 /*
  * @}
- * */
+* */
 
 static ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArgs *args)
 {
 	char typechar = '?';
-	switch (args->type)
+switch (args->type)
 	{
 		case MODBUS_HOLDING_REGISTER: typechar = 'R'; break;
 		case MODBUS_INPUT_REGISTER: typechar = 'I'; break;
@@ -102,58 +104,128 @@ static void buildreq(ModbusMaster *master, int function, int startAddress, int q
 
 static eMBErrorCode eMBMasterPoll( void )
 {
-    UCHAR           pucMBFrame[MAX_PDU_SIZE];
-    UCHAR           ucRcvAddress;
+    char            Poll_log[17] = "MBMasterPoll"; 
+    char            pucMBFrame[MAX_PDU_SIZE];
+    char            ucRcvAddress;
     USHORT          usLength;
     eMBErrorCode    eStatus = MB_ENOERR;
     eMBEventType    eEvent;
+
+    pr_info("%s: Event trigger\n", Poll_log);
 
     /* Check for events from the porting layer (Timer/Serial) */
     if( xMBPortEventGet( &eEvent ) == TRUE )
     {
         switch ( eEvent )
         {
-			case EV_FRAME_RECEIVED:
-				/* Directly call RTU receive function to extract PDU and Address */
-				eStatus = eMBRTUReceive( &ucRcvAddress, pucMBFrame, &usLength );
-
-				if( eStatus == MB_ENOERR )
+            case EV_MASTER_SEND_REQUEST:
+                if(master_state != EM_IDLE)
+                {
+                    pr_err("%s: Something go wrong, previous request haven't completely handled\n", Poll_log);
+                    eStatus = MB_EINVAL;
+                }
+                else
+                {
+                    pr_info("%s: Modbus master request send\n", Poll_log);
+                    /* Send via RTU (Link Layer) */
+                    eMBRTUSend(
+                        ucMBAddress,
+                        modbusMasterGetRequest(&master),
+                        modbusMasterGetRequestLength(&master)
+                    ); 
+                    master_state = EM_WFR;
+                }
+                break;
+			case EV_BYTE_RECEIVED:
+				if(master_state != EM_WFR)
 				{
-					( void )xMBPortEventPost( EV_EXECUTE );
-					/* Check if the frame is for us. If not ignore the frame. */
-					if( ( ucRcvAddress == ucMBAddress ) || ( ucRcvAddress == MB_ADDRESS_BROADCAST ) )
-					{
-						( void )xMBPortEventPost( EV_EXECUTE );
-					}
+                    pr_err("%s: EV_BYTE_RECEIVED: Unexpected frame, master not in WFR state\n", Poll_log);
+                    eStatus = MB_EINVAL;
+				}
+				else
+				{
+					/* Run recive FSM */
+					xMBRTUReceiveFSM();
 				}
 				break;
+            case EV_FRAME_RECEIVED:
+                /* Validation: Only accept frames when waiting for a reply */
+                if(master_state != EM_WFR)
+                {
+                    pr_err("%s: EV_FRAME_RECEIVED: Unexpected frame, master not in WFR state\n", Poll_log);
+                    eStatus = MB_EINVAL;
+                }
+                else
+                {
+                    /* Disable timeout timer */
+                    // MBSend_timeout_disable();
+                    eStatus = eMBRTUReceive( &ucRcvAddress, pucMBFrame, &usLength );
+                    if( eStatus == MB_ENOERR )
+                    {
+                        master_state = EM_PR; // Move to Processing Reply
+                        ( void )xMBPortEventPost( EV_EXECUTE );
+                    }
+                }
+                break;
 
-			case EV_EXECUTE:
-				err = modbusParseResponsePDU(&master,
-									  ucRcvAddress,
-									  modbusMasterGetRequest(&master),
-									  modbusMasterGetRequestLength(&master),
-									  pucMBFrame,
-									  usLength);
-					// Handle parsing error
-				if (!modbusIsOk(err))
-				{
-					pr_err("Response parsing error:\n");
-				}
-				break;
+            case EV_EXECUTE:
+                if(master_state != EM_PR)
+                {
+                    pr_err("%s: EV_EXECUTE: Invalid state for execution\n", Poll_log);
+                }
+                else
+                {
+                    ModbusErrorInfo err = modbusParseResponsePDU(&master,
+                                          ucRcvAddress,
+                                          modbusMasterGetRequest(&master),
+                                          modbusMasterGetRequestLength(&master),
+                                          pucMBFrame,
+                                          usLength);
+                    
+                    if (!modbusIsOk(err))
+                    {
+                        pr_err("%s: Response parsing error\n", Poll_log);
+                        master_state = EM_PER;
+                    }
+                    else
+                    {
+                        pr_info("%s: Response parsing successfully\n", Poll_log);
+                        master_state = EM_IDLE;
+						/* Process Error */
+						// MBProcessing_error();
+                    }
+                }
+                break;
 
-			case EV_FRAME_SENT:
-				/* Frame sent successfully, now wait for slave response */
-				break;
+            case EV_FRAME_SENT:
+                /* Frame sent successfully, now wait for slave response */
+                // MBSend_timeout_enable(iMBTimeout);
+                break;
 
-			default:
-				break;
+            case EV_MASTER_TIMEOUT:
+                if(master_state != EM_WFR)
+                {
+                    pr_err("%s: Time out is expired but in illegal argument\n", Poll_log);
+                    eStatus = MB_EINVAL; 
+                }
+                else
+                {
+                    pr_info("%s: Time out is expired\n", Poll_log);
+                    eStatus = MB_ETIMEDOUT; 
+                    master_state = EM_PER;  
+                    /* Process Error */
+                    // MBProcessing_error();
+                }
+                break;
+
+            default:
+                break;
         }
     }
     return eStatus;
 }
 
-bool ModbusInit(void)
+bool ModbusInit(int baud)
 {
     /* Building modbus application layer using lightmodbus */
     ModbusErrorInfo err = modbusMasterInit(
@@ -165,34 +237,43 @@ bool ModbusInit(void)
         modbusMasterDefaultFunctionCount);
 
     if (!modbusIsOk(err)) return FALSE;
-
-    /* Write and receive in link layer using modbus-rtu */
-    eMBErrorCode eStatus = eMBRTUInit(0, 0, 0, 0);
-    if (eStatus != MB_ENOERR) return FALSE;
-
-    eMBRTUStart();
+	pr_info("ModBus: Init Master sucessfully\n");
+	/* Assign value (use for modbustart function) */
+	baudrate = baud;
     return TRUE;
 }
+
+bool ModbusStart(void)
+{
+    /* Write and receive in link layer using modbus-rtu */
+    eMBErrorCode eStatus = eMBRTUInit(0, baudrate, 0, 0);
+    if (eStatus != MB_ENOERR) return FALSE;
+	xMBPortEventInit();
+    eMBRTUStart();
+	return TRUE;
+}
+
 void ModbusDestroy(void)
 {
 	modbusMasterDestroy(&master);
+	eMBRTUStop();
+	vMBPortEventDeinit();
+	pr_info("ModBus: Destroy sucessfully\n");
 }
 void ModbusRun(void)
 {
 	eMBMasterPoll();
 }
 
-void ModbusSend(UCHAR Address, int function, int startAddress, int quantity)
+void ModbusSend(char Address, int function, int startAddress, int quantity,int timeout)
 {
     /* 1. Build the PDU (Application Layer) */
     buildreq(&master, function, startAddress, quantity);
 	
 	/* 2. Set the current address for comparing when revicing fram*/
 	ucMBAddress = Address;
-    /* 3. Send via RTU (Link Layer) */
-    eMBRTUSend(
-        Address,
-        modbusMasterGetRequest(&master),
-        modbusMasterGetRequestLength(&master)
-    );
+	iMBTimeout = timeout;
+
+	/* 3. Trigger Event */
+	xMBPortEventPost(EV_MASTER_SEND_REQUEST);
 }

@@ -3,11 +3,13 @@
 #include "serdev_driver_dt_sysfs.h"
 
 #define MAX_LENGTH_BUFF 256
+#define BAUDRATE		115200
+#define SLAVE_ADDRESS	0x01
 /* Use for register callback */
-bool (*transmit_fsm_ptr)(void) = NULL;
-bool (*receive_fsm_ptr)(void) = NULL;
-
-struct serdev_device_ops modbus_controller_ops;
+bool (*transmit_success_ptr)(void) = NULL;
+bool (*receive_trigger_ptr)(void) = NULL;
+static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigned char *buffer, size_t size);
+static void modbus_controller_snd_success(struct serdev_device *serdev);
 struct serdev_device *modbus_controller;
 
 /* Declate the probe and remove functions */
@@ -16,9 +18,10 @@ static void modbus_controller_remove(struct serdev_device *serdev);
 
 uint8_t length = 0,receive_pos = 0;
 char receive_buff[MAX_LENGTH_BUFF];
+
 struct of_device_id modbus_controller_ids[] = {
 	{
-		.compatible = "mylsmy,modbus_controler",
+		.compatible = "serdev,modbus_controller",
 	}, { /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, modbus_controller_ids);
@@ -27,88 +30,111 @@ struct serdev_device_driver modbus_controller_driver = {
 	.probe = modbus_controller_probe,
 	.remove = modbus_controller_remove,
 	.driver = {
-		.name = "modbus_controller",
+		.name = "serdev,modbus_controller",
 		.of_match_table = modbus_controller_ids,
 	},
 };
 
+struct serdev_device_ops modbus_controller_ops = 
+{
+	.receive_buf = modbus_controller_recv,
+	//.write_wakeup = modbus_controller_snd_success,
+};
 /**
  * @brief This function is called on loading the driver 
  */
 static int modbus_controller_probe(struct serdev_device *serdev) {
-	modbus_controller = serdev; /* Save to global variable */
-	(void) serdev_device_set_baudrate(modbus_controller,115200);
-	(void) serdev_device_set_parity(modbus_controller,SERDEV_PARITY_NONE);
-	(void) serdev_device_set_flow_control(serdev, false);
-	modbus_controller_enable (false,false);
-	int status;
-	status = serdev_device_open(serdev);
-	printk("modbus_controller - Now I am in the probe function!\n");
-	if(status) {
-		printk("modbus_controller - Error opening serial port!\n");
-		return -status;
-	}
-	printk("modbus_controller - Wrote %d bytes.\n", status);
+    int status;
+    
+    pr_info("Modbus controller - Starting probe process\n");
 
-	return 0;
+    /* 1. Initialize global pointer immediately for other functions to reference */
+    modbus_controller = serdev;
+
+    /* 2. Open the device first to initialize internal TTY structures */
+    status = serdev_device_open(serdev);
+    if(status) {
+        pr_err("Modbus controller - Failed to open serial port: %d\n", status);
+        return status; /* First step failure, just return */
+    }
+
+    /* 3. Configure Serial parameters (Safe only after opening) */
+    serdev_device_set_baudrate(serdev, BAUDRATE);
+    serdev_device_set_parity(serdev, SERDEV_PARITY_NONE);
+    serdev_device_set_flow_control(serdev, false);
+
+	serdev_device_set_client_ops(serdev,&modbus_controller_ops);
+
+    /* 4. Start Modbus Layer (Initializes Timers and Tasklets) */
+    if(!ModbusStart()) {
+        pr_err("Modbus controller - Failed to start Modbus link layer\n");
+        status = -EINVAL;
+        goto err_close_serdev; /* Jump to cleanup label */
+    }
+
+    /* 6. Send initial test command */
+    ModbusSend(SLAVE_ADDRESS, 0x03, 0x01, 2,20);
+    
+    pr_info("Modbus controller - Probe successful!\n");
+    return 0;
+
+/* --- Error Handling Labels --- */
+
+err_close_serdev:
+    /* If ModbusStart fails, we must close the port opened in step 2 */
+    serdev_device_close(serdev);
+    return status;
 }
 
 /**
  * @brief This function is called on unloading the driver 
  */
 static void modbus_controller_remove(struct serdev_device *serdev) {
-	printk("modbus_controller - Now I am in the remove function\n");
+	pr_info("Modbus controller - Now I am in the remove function\n");
 	serdev_device_close(serdev);
 }
 
-/* Run finite state machine when interupt occur 
+/* 
+ * Run finite state machine when interupt occur 
  * */
 static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigned char *buffer, size_t size)
 {
-	for (int i = 0; i < (int)size; i ++)
+	for (int i = 0; i < (int) size; i++)
 	{
-		receive_buff[length++] = buffer[i];
+		if (length < MAX_LENGTH_BUFF) 
+		{
+			receive_buff[length++] = buffer[i];
+		} 
+		else 
+		{
+			break;
+		}
 	}
-	if (receive_fsm_ptr)
+	if (receive_trigger_ptr)
 	{
-		(void)receive_fsm_ptr();
+		(void)receive_trigger_ptr();
 	}
 	return size;
 }
 
-static void modbus_controller_snd(struct serdev_device *serdev)
+static void modbus_controller_snd_success(struct serdev_device *serdev)
 {
-	if(transmit_fsm_ptr)
+	if(transmit_success_ptr)
 	{
-		(void)transmit_fsm_ptr();
+		(void)transmit_success_ptr();
 	}	
 }
 
 /**********************************************************
 	Exported functions
 ***********************************************************/
-/* 
- * Enable/Disable interupt
- */
-void modbus_controller_enable(bool rxEnable, bool txEnable)
-{
-	if (rxEnable)
-		modbus_controller_ops.receive_buf = modbus_controller_recv;
-	else 
-		modbus_controller_ops.receive_buf = NULL; 
-	if (txEnable)
-		modbus_controller_ops.write_wakeup = modbus_controller_snd;
-	else
-		modbus_controller_ops.write_wakeup = NULL;
-	serdev_device_set_client_ops(modbus_controller, &modbus_controller_ops);
-}
 
 /* 
  * Write, read byte
  */
-void modbus_controller_write(char byte)
+void modbus_controller_write(char* buffer, int length)
 {
-	serdev_device_write_buf(modbus_controller,&byte,1);
+	serdev_device_write_buf(modbus_controller,buffer,length);
 }
 
 char modbus_controller_read()
@@ -124,13 +150,24 @@ char modbus_controller_read()
 
 int modbus_controller_register()
 {
-	return serdev_device_driver_register(&modbus_controller_driver);
+	pr_info("Modbus Controller: Init modbus master\n");
+	(void)ModbusInit(BAUDRATE);
+	pr_info("Modbus Controller: Register uart\n");
+	int ret_val = 0;
+	ret_val = serdev_device_driver_register(&modbus_controller_driver);
+	if(ret_val)
+	{
+		pr_info("Modbus controller - Error! Could not load driver\n");
+	}
+	return ret_val;
+	
 }
-
 
 void modbus_controller_unregister()
 {
+	pr_info("modbus_controller - Unregiser modbus controller");
 	serdev_device_driver_unregister(&modbus_controller_driver);
+	ModbusDestroy();
 }
 
 /**
@@ -140,6 +177,6 @@ void modbus_controller_unregister()
  */
 void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void))
 {
-    transmit_fsm_ptr = tx_func;
-    receive_fsm_ptr = rx_func;
+    transmit_success_ptr = tx_func;
+    receive_trigger_ptr = rx_func;
 }

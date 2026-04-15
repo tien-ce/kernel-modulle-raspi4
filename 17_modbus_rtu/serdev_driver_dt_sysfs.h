@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/mod_devicetable.h>
 #include <linux/of.h>               /* For Device Tree (DT) matching functions */
 #include <linux/of_device.h>        /* For extracting match data from DT */
 #include <linux/platform_device.h>  /* For platform driver/device structures */
@@ -21,7 +22,7 @@
 #include <linux/uaccess.h>          /* For copy_to_user and copy_from_user */
 #include <linux/slab.h>             /* For memory allocation (kmalloc/kzalloc) */
 #include <linux/mod_devicetable.h>  /* For ID tables (platform_device_id) */
-
+#include <linux/serdev.h>			/* For register to serdev (modbus_controller)*/
 /* -------------------------------------------------------------------------
  * Permission Macros
  * ------------------------------------------------------------------------- */
@@ -29,6 +30,10 @@
 #define WR_ONLY 0x10
 #define RD_WR	0x11
 
+/* -------------------------------------------------------------------------
+ * Global variable 
+ * ------------------------------------------------------------------------- */
+extern struct serdev_device *modbus_controller;
 /* -------------------------------------------------------------------------
  * Device Configuration & Platform Data
  * ------------------------------------------------------------------------- */
@@ -68,13 +73,47 @@ enum pcdev_names {
 };
 
 /* -------------------------------------------------------------------------
- * Function Prototypes for File Operations (Syscalls)
+ * Function Prototypes 
  * ------------------------------------------------------------------------- */
+
+/*
+ * for File Operations (Syscalls) 
+ * */
 loff_t pcd_llseek(struct file *filp, loff_t off, int whence);
 int pcd_open(struct inode *inode, struct file *filp);
 ssize_t pcd_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos);
 ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos);
 int pcd_release(struct inode *inode, struct file *filp);
+/*
+ * for Modbus controller (Serdev device) 
+ * */
+int modbus_controller_register(void);
+void modbus_controller_unregister(void);
+void modbus_controller_enable(bool rxEnable, bool txEnable);
+void modbus_controller_write(char *buffer, int length);
+char modbus_controller_read(void);
+void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void));
+
+/*
+ *	For Modbus timer 
+ */
+void timer_init(int usTimTimerout50us); 
+void timer_disable(void);
+void timer_enable(void);
+void timer_remove(void); 
+void timer_register_callback(bool (*hrtimer_expired_callback)(void));
+
+/* 
+ * For Modbus application 
+ * Bridge between app and link layer
+ */ 
+
+ 
+bool ModbusInit(int baud);
+bool ModbusStart(void);
+void ModbusDestroy(void);
+void ModbusRun(void);
+void ModbusSend(char ucSlaveAddress, int function, int startAddress, int quantity, int MsTimeout);
 
 /* -------------------------------------------------------------------------
  * Management Structures (Private Data)

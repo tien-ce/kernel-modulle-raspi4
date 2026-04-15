@@ -25,6 +25,9 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
+ * Modifications:
+ * Copyright (c) 2026 Văn Tiến  <tien11102004@gmail.com>
+ * - Add some new events for master
  */
 
 #ifndef _MB_PORT_H
@@ -40,10 +43,21 @@ PR_BEGIN_EXTERN_C
 
 typedef enum
 {
+	EM_IDLE,					/*!< Master is idle. */
+	EM_WFR,						/*!< Master waiting for reply. */
+	EM_PR,						/*!< Master processing reply. */
+	EM_PER,						/*!< Master processing error. */
+} eMasterType;
+
+typedef enum
+{
     EV_READY,                   /*!< Startup finished. */
     EV_FRAME_RECEIVED,          /*!< Frame received. */
+	EV_BYTE_RECEIVED,			/*!< Byte received.	*/
     EV_EXECUTE,                 /*!< Execute function. */
-    EV_FRAME_SENT               /*!< Frame sent. */
+    EV_FRAME_SENT,              /*!< Frame sent. */
+	EV_MASTER_SEND_REQUEST,		/*!< Master request to send.*/
+	EV_MASTER_TIMEOUT,			/*!< Request timeout.*/
 } eMBEventType;
 
 /*! \ingroup modbus
@@ -67,6 +81,7 @@ BOOL            xMBPortEventPost( eMBEventType eEvent );
 
 BOOL            xMBPortEventGet(  /*@out@ */ eMBEventType * eEvent );
 
+void			vMBPortEventDeinit(void);
 /* ----------------------- Serial port functions ----------------------------*/
 
 BOOL            xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate,
