@@ -45,6 +45,7 @@
 #define MB_SER_PDU_SIZE_CRC     2       /*!< Size of CRC field in PDU. */
 #define MB_SER_PDU_ADDR_OFF     0       /*!< Offset of slave address in Ser-PDU. */
 #define MB_SER_PDU_PDU_OFF      1       /*!< Offset of Modbus-PDU in Ser-PDU. */
+#define MAX_PER_RECEIVE			MB_SER_PDU_SIZE_MAX		/*!< Maximun size of a number bytes reading per time. */
 
 /* ----------------------- Type definitions ---------------------------------*/
 typedef enum
@@ -148,7 +149,6 @@ eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength )
 	eMBErrorCode    eStatus = MB_ENOERR;
 
 	ENTER_CRITICAL_SECTION(  );
-	//assert( usRcvBufferPos <= MB_SER_PDU_SIZE_MAX );
 
 	if( ( usRcvBufferPos >= MB_SER_PDU_SIZE_MIN )
 		&& ( usMBCRC16( ( UCHAR * ) ucRTUReBuf, usRcvBufferPos ) == 0 ) )
@@ -162,15 +162,13 @@ eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength )
 		 */
 		*pusLength = ( USHORT )( usRcvBufferPos - MB_SER_PDU_PDU_OFF - MB_SER_PDU_SIZE_CRC );
 		 /* Copy from the start of the Modbus PDU to the caller. */
-		 UINT8	num_cpy = uiPortMemcpy(pucFrame,(ucRTUReBuf+MB_SER_PDU_ADDR_OFF),*(pusLength));
-		 if (num_cpy != *pusLength)
-			 eStatus = MB_EPORTERR;
+		uiPortMemcpy(pucFrame,(ucRTUReBuf+MB_SER_PDU_ADDR_OFF),*(pusLength));
 	}
 	else
 	{
 		eStatus = MB_EIO;
+		pr_err("Modbus RTU receivce: Size Problem\n");;
 	}
-
 
 	EXIT_CRITICAL_SECTION(  );
 	return eStatus;
@@ -205,12 +203,12 @@ eMBRTUSend( UCHAR ucSlaveAddress, const UCHAR * pucFrame, USHORT usLength )
 	 * This oposite with PDU format (usually big endian format)
 	 * */
 	/* Activate the transmitter. */
-	pr_info ("Modbus request send");
+	pr_info ("Modbus request send\n");
 	ucRTUSndBuf[usSndBufferCount++] = ( UCHAR )( usCRC16 & 0xFF );
 	ucRTUSndBuf[usSndBufferCount++] = ( UCHAR )( usCRC16 >> 8 );
 	for (int i = 0; i < usSndBufferCount; i++)
 	{
-		pr_info ("Sndbuf[%d]: 0x%x",i,ucRTUSndBuf[i]);
+		pr_info ("Sndbuf[%d]: 0x%x\n",i,ucRTUSndBuf[i]);
 	}
 	modbus_controller_write(ucRTUSndBuf, usSndBufferCount);
     EXIT_CRITICAL_SECTION(  );
@@ -221,12 +219,10 @@ BOOL
 xMBRTUReceiveFSM( void )
 {
     BOOL            xTaskNeedSwitch = FALSE;
-    UCHAR           ucByte;
-
-    //assert( eSndState == STATE_TX_IDLE );
-
-    /* Always read the character. */
-    ( void )xMBPortSerialGetByte( ( CHAR * ) & ucByte );
+	UCHAR			ucRTUTmpBuf[MAX_PER_RECEIVE];
+	INT				usRTUReceiveCount;
+    /* Read the characters. */
+    ( void )xMBPortSerialRead(ucRTUTmpBuf,&usRTUReceiveCount);
 
     switch ( eRcvState )
     {
@@ -249,10 +245,12 @@ xMBRTUReceiveFSM( void )
          * receiver is in the state STATE_RX_RECEIVCE.
          */
     case STATE_RX_IDLE:
+		pr_info("Recive FSM: Recive first bytes\n");
         usRcvBufferPos = 0;
-        ucRTUReBuf[usRcvBufferPos++] = ucByte;
+		uiPortMemcpy(ucRTUReBuf+usRcvBufferPos,ucRTUTmpBuf,usRTUReceiveCount);
+		usRcvBufferPos += usRTUReceiveCount;
+		pr_info("usRcvBufferPos:%d\n",usRcvBufferPos);
         eRcvState = STATE_RX_RCV;
-
         /* Enable t3.5 timers. */
         vMBPortTimersEnable(  );
         break;
@@ -263,25 +261,21 @@ xMBRTUReceiveFSM( void )
          * ignored.
          */
     case STATE_RX_RCV:
-        if( usRcvBufferPos < MB_SER_PDU_SIZE_MAX )
+        if( usRcvBufferPos + usRTUReceiveCount < MB_SER_PDU_SIZE_MAX )
         {
-            ucRTUReBuf[usRcvBufferPos++] = ucByte;
+			uiPortMemcpy(ucRTUReBuf+usRcvBufferPos,ucRTUTmpBuf,usRTUReceiveCount);
+			usRcvBufferPos += usRTUReceiveCount;
+			pr_info("usRcvBufferPos:%d\n",usRcvBufferPos);
+			eRcvState = STATE_RX_RCV;
         }
         else
         {
+			pr_err("Recive FSM: Receive number of bytes exceed MAX\n");
             eRcvState = STATE_RX_ERROR;
         }
-        vMBPortTimersEnable(  );
         break;
     }
     return xTaskNeedSwitch;
-}
-
-BOOL
-xMBRTUReceiveTrigger (void)
-{
-	xMBPortEventPost(EV_BYTE_RECEIVED);
-	return TRUE;
 }
 
 BOOL
@@ -301,9 +295,8 @@ xMBRTUTimerT35Expired( void )
     {
         /* Timer t35 expired. Startup phase is finished. */
     case STATE_RX_INIT:
-        xNeedPoll = xMBPortEventPost( EV_READY );
+		xNeedPoll = xMBPortEventPost( EV_READY );
         break;
-
         /* A frame was received and t35 expired. Notify the listener that
          * a new frame was received. */
     case STATE_RX_RCV:
@@ -319,8 +312,7 @@ xMBRTUTimerT35Expired( void )
         //assert( ( eRcvState == STATE_RX_INIT ) ||
                 //( eRcvState == STATE_RX_RCV ) || ( eRcvState == STATE_RX_ERROR ) );
     }
+	eRcvState = STATE_RX_IDLE;
     //vMBPortTimersDisable(  );
-    eRcvState = STATE_RX_IDLE;
-
     return xNeedPoll;
 }

@@ -7,7 +7,8 @@
 #define SLAVE_ADDRESS	0x01
 /* Use for register callback */
 bool (*transmit_success_ptr)(void) = NULL;
-bool (*receive_trigger_ptr)(void) = NULL;
+bool (*receive_callback_ptr)(void) = NULL;
+
 static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigned char *buffer, size_t size);
 static void modbus_controller_snd_success(struct serdev_device *serdev);
 struct serdev_device *modbus_controller;
@@ -16,7 +17,7 @@ struct serdev_device *modbus_controller;
 static int modbus_controller_probe(struct serdev_device *serdev);
 static void modbus_controller_remove(struct serdev_device *serdev);
 
-uint8_t length = 0,receive_pos = 0;
+uint8_t length = 0;
 char receive_buff[MAX_LENGTH_BUFF];
 
 struct of_device_id modbus_controller_ids[] = {
@@ -110,9 +111,9 @@ static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigne
 			break;
 		}
 	}
-	if (receive_trigger_ptr)
+	if (receive_callback_ptr)
 	{
-		(void)receive_trigger_ptr();
+		(void)receive_callback_ptr();
 	}
 	return size;
 }
@@ -130,22 +131,18 @@ static void modbus_controller_snd_success(struct serdev_device *serdev)
 ***********************************************************/
 
 /* 
- * Write, read byte
- */
+ * Write, read  
+ * */
 void modbus_controller_write(char* buffer, int length)
 {
 	serdev_device_write_buf(modbus_controller,buffer,length);
 }
 
-char modbus_controller_read()
+void modbus_controller_read(char *buffer, int *count)
 {
-	char ret_val = receive_buff[receive_pos++];
-	if (receive_pos >= length)
-	{
-		receive_pos = 0;
-		length = 0;
-	}
-	return ret_val;
+	*count = length;
+	memcpy(buffer,receive_buff,length);
+	length = 0;
 }
 
 int modbus_controller_register()
@@ -178,5 +175,5 @@ void modbus_controller_unregister()
 void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void))
 {
     transmit_success_ptr = tx_func;
-    receive_trigger_ptr = rx_func;
+    receive_callback_ptr = rx_func;
 }

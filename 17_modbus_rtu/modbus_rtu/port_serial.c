@@ -36,12 +36,12 @@
 BOOL xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity embparity, UCHAR ucStopBits)
 {
 	/* This funciton is not used */
-	register_modbus_callbacks(&xMBRTUTransmitSuccess,&xMBRTUReceiveTrigger);
+	register_modbus_callbacks(&xMBRTUTransmitSuccess,&xMBRTUReceiveFSM);
 	return TRUE;
 }
 
-BOOL xMBPortSerialGetByte(CHAR *byte)
+BOOL xMBPortSerialRead(UCHAR *buffer, INT *count)
 {
-	*byte = modbus_controller_read();
+	modbus_controller_read(buffer,count);	
 	return TRUE;
 }
