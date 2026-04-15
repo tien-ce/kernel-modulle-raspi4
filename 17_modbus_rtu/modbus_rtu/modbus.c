@@ -21,7 +21,7 @@
  */
 #define LIGHTMODBUS_MASTER_FULL
 #define LIGHTMODBUS_IMPL
-
+#define LIGHTMODBUS_DEBUG
 #include "lightmodbus/lightmodbus.h"
 #include "Include/port.h"
 #include "Include/mb.h"
@@ -46,7 +46,7 @@ static int baudrate; // Using to calculate the timer
 static ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArgs *args)
 {
 	char typechar = '?';
-switch (args->type)
+	switch (args->type)
 	{
 		case MODBUS_HOLDING_REGISTER: typechar = 'R'; break;
 		case MODBUS_INPUT_REGISTER: typechar = 'I'; break;
@@ -97,7 +97,9 @@ static void buildreq(ModbusMaster *master, int function, int startAddress, int q
 
     if (!modbusIsOk(err))
     {
-        pr_err("Error building request:\n");
+        pr_err("Error building request: %s(%s)\n",
+			modbusErrorSourceStr(modbusGetErrorSource(err)),
+			modbusErrorStr(modbusGetErrorCode(err)));
     }
 }
 
@@ -118,6 +120,8 @@ static eMBErrorCode eMBMasterPoll( void )
     {
         switch ( eEvent )
         {
+			case EV_READY:
+				break;
             case EV_MASTER_SEND_REQUEST:
                 if(master_state != EM_IDLE)
                 {
@@ -136,18 +140,6 @@ static eMBErrorCode eMBMasterPoll( void )
                     master_state = EM_WFR;
                 }
                 break;
-			case EV_BYTE_RECEIVED:
-				if(master_state != EM_WFR)
-				{
-                    pr_err("%s: EV_BYTE_RECEIVED: Unexpected frame, master not in WFR state\n", Poll_log);
-                    eStatus = MB_EINVAL;
-				}
-				else
-				{
-					/* Run recive FSM */
-					xMBRTUReceiveFSM();
-				}
-				break;
             case EV_FRAME_RECEIVED:
                 /* Validation: Only accept frames when waiting for a reply */
                 if(master_state != EM_WFR)
@@ -157,14 +149,19 @@ static eMBErrorCode eMBMasterPoll( void )
                 }
                 else
                 {
+                    pr_info("%s: EV_FRAME_RECEIVED: Recived frame\n", Poll_log);
                     /* Disable timeout timer */
-                    // MBSend_timeout_disable();
+                    vMBPortTimersDisable();
                     eStatus = eMBRTUReceive( &ucRcvAddress, pucMBFrame, &usLength );
                     if( eStatus == MB_ENOERR )
                     {
                         master_state = EM_PR; // Move to Processing Reply
                         ( void )xMBPortEventPost( EV_EXECUTE );
                     }
+					else
+					{
+
+					}
                 }
                 break;
 
@@ -175,7 +172,7 @@ static eMBErrorCode eMBMasterPoll( void )
                 }
                 else
                 {
-                    ModbusErrorInfo err = modbusParseResponsePDU(&master,
+                    err = modbusParseResponsePDU(&master,
                                           ucRcvAddress,
                                           modbusMasterGetRequest(&master),
                                           modbusMasterGetRequestLength(&master),
@@ -184,15 +181,17 @@ static eMBErrorCode eMBMasterPoll( void )
                     
                     if (!modbusIsOk(err))
                     {
-                        pr_err("%s: Response parsing error\n", Poll_log);
-                        master_state = EM_PER;
+						pr_err("Error parsing request: %s(%s)\n",
+							modbusErrorSourceStr(modbusGetErrorSource(err)),
+							modbusErrorStr(modbusGetErrorCode(err)));
+						master_state = EM_PER;
+						/* Process Error */
+						// MBProcessing_error();
                     }
                     else
                     {
                         pr_info("%s: Response parsing successfully\n", Poll_log);
                         master_state = EM_IDLE;
-						/* Process Error */
-						// MBProcessing_error();
                     }
                 }
                 break;

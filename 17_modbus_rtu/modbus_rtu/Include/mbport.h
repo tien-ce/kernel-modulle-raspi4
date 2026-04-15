@@ -27,7 +27,8 @@
  *
  * Modifications:
  * Copyright (c) 2026 Văn Tiến  <tien11102004@gmail.com>
- * - Add some new events for master
+ * - Add some new events for master.
+ * - Change to read multiple bytes instead of one.
  */
 
 #ifndef _MB_PORT_H
@@ -92,9 +93,7 @@ void            vMBPortClose( void );
 
 void            xMBPortSerialClose( void );
 
-void            vMBPortSerialEnable( BOOL xRxEnable, BOOL xTxEnable );
-
-BOOL            xMBPortSerialGetByte( CHAR * pucByte );
+BOOL            xMBPortSerialRead( UCHAR * buffer, INT *count);
 
 BOOL            xMBPortSerialPutByte( CHAR ucByte );
 
