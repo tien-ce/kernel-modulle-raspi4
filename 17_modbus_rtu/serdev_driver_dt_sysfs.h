@@ -111,8 +111,8 @@ void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void));
  *	For Modbus timer 
  */
 void timer_init(int usTimTimerout50us); 
-void timer_disable(void);
-void timer_enable(void);
+void timer_start(void);
+void timer_cancel(void);
 void timer_remove(void); 
 void timer_register_callback(bool (*hrtimer_expired_callback)(void));
 
@@ -124,8 +124,8 @@ void timer_register_callback(bool (*hrtimer_expired_callback)(void));
  
 bool ModbusInit(int baud);
 bool ModbusStart(void);
-void ModbusDestroy(void);
 void ModbusRun(void);
+void ModbusDestroy(void);
 void ModbusSend(char ucSlaveAddress, int function, int startAddress, int quantity, int MsTimeout);
 
 /* -------------------------------------------------------------------------

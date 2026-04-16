@@ -102,9 +102,9 @@ BOOL            xMBPortTimersInit( USHORT usTimeOut50us );
 
 void            xMBPortTimersClose( void );
 
-void            vMBPortTimersEnable( void );
+void            vMBPortTimersStart( void );
 
-void            vMBPortTimersDisable( void );
+void            vMBPortTimersCancel( void );
 
 void            vMBPortTimersDelay( USHORT usTimeOutMS );
 

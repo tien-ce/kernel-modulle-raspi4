@@ -130,7 +130,7 @@ eMBRTUStart( void )
      * modbus protocol stack until the bus is free.
      */
 	eRcvState = STATE_RX_INIT;
-	vMBPortTimersEnable( );
+	vMBPortTimersStart( );
 	EXIT_CRITICAL_SECTION(  );
 }
 
@@ -231,14 +231,14 @@ xMBRTUReceiveFSM( void )
          * wait until the frame is finished.
          */
     case STATE_RX_INIT:
-        vMBPortTimersEnable(  );
+        vMBPortTimersStart(  );
         break;
 
         /* In the error state we wait until all characters in the
          * damaged frame are transmitted.
          */
     case STATE_RX_ERROR:
-        vMBPortTimersEnable(  );
+        vMBPortTimersStart(  );
         break;
 
         /* In the idle state we wait for a new character. If a character
@@ -253,7 +253,7 @@ xMBRTUReceiveFSM( void )
 		pr_info("usRcvBufferPos:%d\n",usRcvBufferPos);
         eRcvState = STATE_RX_RCV;
         /* Enable t3.5 timers. */
-        vMBPortTimersEnable(  );
+        vMBPortTimersStart(  );
         break;
 
         /* We are currently receiving a frame. Reset the timer after

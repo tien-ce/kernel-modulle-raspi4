@@ -41,14 +41,14 @@ BOOL xMBPortTimersInit( USHORT usTim1Timerout50us )
 	return true;
 }
 
-void vMBPortTimersEnable( void )
+void vMBPortTimersStart( void )
 {
-	timer_enable();
+	timer_start();
 }
 
-void vMBPortTimersDisable( void )
+void vMBPortTimersCancel( void )
 {
-	timer_disable();
+	timer_cancel();
 }
 
 

@@ -181,7 +181,7 @@ static eMBErrorCode eMBMasterPoll( void )
                 {
                     pr_info("%s: EV_FRAME_RECEIVED: Received frame\n", Poll_log);
                     /* Finalize RTU reception and disable T35 timer */
-                    vMBPortTimersDisable();
+                    vMBPortTimersCancel();
                     eStatus = eMBRTUReceive( &ucRcvAddress, pucMBFrame, &usLength );
 					for(int i = 0; i < usLength; i++)
 					{
@@ -202,27 +202,7 @@ static eMBErrorCode eMBMasterPoll( void )
                 }
                 else
                 {
-                    /* Application Layer: Parse the received PDU */
-					pr_info("usLength:%d\n",usLength);
-                    err = modbusParseResponsePDU(&master,
-                                          ucRcvAddress,
-                                          modbusMasterGetRequest(&master),
-                                          modbusMasterGetRequestLength(&master),
-                                          pucMBFrame,
-                                          usLength);
-                    
-                    if (!modbusIsOk(err))
-                    {
-                        pr_err("Error parsing request: %s(%s)\n",
-                            modbusErrorSourceStr(modbusGetErrorSource(err)),
-                            modbusErrorStr(modbusGetErrorCode(err)));
-                        master_state = EM_PER;
-                    }
-                    else
-                    {
-                        pr_info("%s: Response parsing successfully\n", Poll_log);
-                        master_state = EM_IDLE;
-                    }
+					/* Wake up master waiting in queue */
                 }
                 break;
 
@@ -311,6 +291,7 @@ void ModbusRun(void)
  */
 void ModbusSend(char Address, int function, int startAddress, int quantity, int timeout)
 {
+	/* 0. Lock the master */
     /* 1. Build the PDU (Application Layer) */
     buildreq(&master, function, startAddress, quantity);
     
@@ -320,4 +301,32 @@ void ModbusSend(char Address, int function, int startAddress, int quantity, int 
 
     /* 3. Trigger the Send Event to be handled by the state machine */
     xMBPortEventPost(EV_MASTER_SEND_REQUEST);
+	/* 4. Start timmer for time out */
+
+	/* 5. Waiting in queue until recive frame or time out is due*/
+	
+	/* 6. Parsing to read input */
+	/* Application Layer: Parse the received PDU */
+	pr_info("usLength:%d\n",usLength);
+	err = modbusParseResponsePDU(&master,
+						  ucRcvAddress,
+						  modbusMasterGetRequest(&master),
+						  modbusMasterGetRequestLength(&master),
+						  pucMBFrame,
+						  usLength);
+
+	if (!modbusIsOk(err))
+	{
+		pr_err("Error parsing request: %s(%s)\n",
+			modbusErrorSourceStr(modbusGetErrorSource(err)),
+			modbusErrorStr(modbusGetErrorCode(err)));
+		master_state = EM_PER;
+	}
+	else
+	{
+		pr_info("Response parsing successfully\n");
+		master_state = EM_IDLE;
+	}
+
+	/* 7. Relase the master's lock */
 }
