@@ -78,7 +78,7 @@ void timer_init(int usTimTimerout50us)
  * @brief Stops the timer and ensures the handler has finished execution.
  * Use this when the driver is closing or entering a low-power state.
  */
-void timer_disable(void)
+void timer_cancel(void)
 {
     /* hrtimer_cancel is synchronous: it waits for any running handler to finish */
     hrtimer_cancel(&my_hrtimer);
@@ -92,7 +92,7 @@ void timer_register_callback(bool (*hrtimer_expired_callback)(void))
  * @brief Starts or Resets the timer countdown.
  * In Modbus RTU, call this every time a byte is received to reset the silence clock.
  */
-void timer_enable(void)
+void timer_start(void)
 {
     /* * Starts the timer relative to the current moment.
      * If the timer was already running, it is automatically rescheduled.

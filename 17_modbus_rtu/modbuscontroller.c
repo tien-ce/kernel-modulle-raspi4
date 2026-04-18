@@ -87,6 +87,9 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
 
 	serdev_device_set_client_ops(serdev,&modbus_controller_ops);
 
+	(void)ModbusInit(BAUDRATE);
+	pr_info("Modbus Controller: Register uart\n");
+
     /* 4. Start Modbus Layer (Initializes Timers and Tasklets) */
     if(!ModbusStart()) {
         pr_err("Modbus controller - Failed to start Modbus link layer\n");
@@ -95,7 +98,7 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
     }
 
     /* 6. Send initial test command */
-    ModbusSend(SLAVE_ADDRESS, 0x03, 0x01, 2,20);
+    ModbusSend(SLAVE_ADDRESS, 0x03, 0x01, 1,20);
     
     pr_info("Modbus controller - Probe successful!\n");
     return 0;
@@ -166,28 +169,6 @@ void modbus_controller_read(char *buffer, int *count)
 	length = 0;
 }
 
-int modbus_controller_register()
-{
-	pr_info("Modbus Controller: Init modbus master\n");
-	(void)ModbusInit(BAUDRATE);
-	pr_info("Modbus Controller: Register uart\n");
-	int ret_val = 0;
-	ret_val = serdev_device_driver_register(&modbus_controller_driver);
-	if(ret_val)
-	{
-		pr_info("Modbus controller - Error! Could not load driver\n");
-	}
-	return ret_val;
-	
-}
-
-void modbus_controller_unregister()
-{
-	pr_info("modbus_controller - Unregiser modbus controller");
-	serdev_device_driver_unregister(&modbus_controller_driver);
-	ModbusDestroy();
-}
-
 /**
  * register_modbus_callbacks - Assigns the FSM functions
  * @tx_func: Pointer to the Transmit FSM function
@@ -198,3 +179,27 @@ void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void))
     transmit_success_ptr = tx_func;
     receive_callback_ptr = rx_func;
 }
+
+/* -------------------------------------------------------------------------
+ * Module Registration
+ * ------------------------------------------------------------------------- */
+
+static int __init modbus_controller_init (void)
+{
+	int ret_val;
+	ret_val = serdev_device_driver_register(&modbus_controller_driver);
+	if(ret_val)
+	{
+		pr_err("Modbus controller - Error! Could not load driver\n");
+	}
+	return ret_val;
+}
+
+static void __exit modbus_controller_exit (void)
+{
+	serdev_device_driver_unregister(&modbus_controller_driver);
+	ModbusDestroy();
+}
+
+module_init(modbus_controller_init);
+module_exit(modbus_controller_exit);

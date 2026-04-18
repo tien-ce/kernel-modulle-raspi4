@@ -85,6 +85,16 @@ enum pcdev_names {
 	PCDEVD1X,
 };
 
+/*8 
+ * enum send return type - Return value when modbus device request
+ */
+typedef enum
+{
+	ESEND_NOERR,				/*!< Send successfully. */
+	ESEND_TIMEOUT,				/*!< Send Timeout. */
+	ESEND_RQINVAL,				/*!< Request Invalid. */
+	ESEND_RPINVAL,				/*!< Respone Invalid. */
+} SendRetType;
 /* -------------------------------------------------------------------------
  * Function Prototypes 
  * ------------------------------------------------------------------------- */
@@ -126,7 +136,7 @@ bool ModbusInit(int baud);
 bool ModbusStart(void);
 void ModbusRun(void);
 void ModbusDestroy(void);
-void ModbusSend(char ucSlaveAddress, int function, int startAddress, int quantity, int MsTimeout);
+SendRetType ModbusSend(char Address, int function, int startAddress, int quantity, int timeout);
 
 /* -------------------------------------------------------------------------
  * Management Structures (Private Data)

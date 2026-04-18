@@ -42,12 +42,12 @@ PR_BEGIN_EXTERN_C
 
 /* ----------------------- Type definitions ---------------------------------*/
 
+
 typedef enum
 {
 	EM_IDLE,					/*!< Master is idle. */
 	EM_WFR,						/*!< Master waiting for reply. */
 	EM_PR,						/*!< Master processing reply. */
-	EM_PER,						/*!< Master processing error. */
 } eMasterType;
 
 typedef enum
@@ -58,7 +58,6 @@ typedef enum
     EV_EXECUTE,                 /*!< Execute function. */
     EV_FRAME_SENT,              /*!< Frame sent. */
 	EV_MASTER_SEND_REQUEST,		/*!< Master request to send.*/
-	EV_MASTER_TIMEOUT,			/*!< Request timeout.*/
 } eMBEventType;
 
 /*! \ingroup modbus
@@ -71,7 +70,7 @@ typedef enum
 typedef enum
 {
     MB_PAR_NONE,                /*!< No parity. */
-    MB_PAR_ODD,                 /*!< Odd parity. */
+    MB_PEV_FRAME_RECEIVEDAR_ODD,                 /*!< Odd parity. */
     MB_PAR_EVEN                 /*!< Even parity. */
 } eMBParity;
 
@@ -83,19 +82,6 @@ BOOL            xMBPortEventPost( eMBEventType eEvent );
 BOOL            xMBPortEventGet(  /*@out@ */ eMBEventType * eEvent );
 
 void			vMBPortEventDeinit(void);
-/* ----------------------- Serial port functions ----------------------------*/
-
-BOOL            xMBPortSerialInit( UCHAR ucPort, ULONG ulBaudRate,
-                                   UCHAR ucDataBits, eMBParity eParity,
-                                   UCHAR ucStopBits );
-
-void            vMBPortClose( void );
-
-void            xMBPortSerialClose( void );
-
-BOOL            xMBPortSerialRead( UCHAR * buffer, INT *count);
-
-BOOL            xMBPortSerialPutByte( CHAR ucByte );
 
 /* ----------------------- Timers functions ---------------------------------*/
 BOOL            xMBPortTimersInit( USHORT usTimeOut50us );

@@ -76,45 +76,35 @@ static volatile USHORT usRcvBufferPos;
 
 /* ----------------------- Start implementation -----------------------------*/
 eMBErrorCode
-eMBRTUInit(UCHAR ucPort, ULONG ulBaudRate, eMBParity eParity,
-            UCHAR ucStopBits )
+eMBRTUInit(ULONG ulBaudRate)
 {
     eMBErrorCode    eStatus = MB_ENOERR;
     ULONG           usTimerT35_50us;
 
     ENTER_CRITICAL_SECTION(  );
-
-    /* Modbus RTU uses 8 Databits. */
-    if( xMBPortSerialInit( ucPort, ulBaudRate, 8, eParity, ucStopBits ) != TRUE )
-    {
-        eStatus = MB_EPORTERR;
-    }
-    else
-    {
-        /* If baudrate > 19200 then we should use the fixed timer values
-         * t35 = 1750us. Otherwise t35 must be 3.5 times the character time.
-         */
-        if( ulBaudRate > 19200 )
-        {
-            usTimerT35_50us = 35;       /* 1800us. */
-        }
-        else
-        {
-            /* The timer reload value for a character is given by:
-             *
-             * ChTimeValue = Ticks_per_1s / ( Baudrate / 11 )
-             *             = 11 * Ticks_per_1s / Baudrate
-             *             = 220000 / Baudrate
-             * The reload for t3.5 is 1.5 times this value and similary
-             * for t3.5.
-             */
-            usTimerT35_50us = ( 7UL * 220000UL ) / ( 2UL * ulBaudRate );
-        }
-        if( xMBPortTimersInit( ( USHORT ) usTimerT35_50us ) != TRUE )
-        {
-            eStatus = MB_EPORTERR;
-        }
-    }
+	/* If baudrate > 19200 then we should use the fixed timer values
+	 * t35 = 1750us. Otherwise t35 must be 3.5 times the character time.
+	 */
+	if( ulBaudRate > 19200 )
+	{
+		usTimerT35_50us = 35;       /* 1800us. */
+	}
+	else
+	{
+		/* The timer reload value for a character is given by:
+		 *
+		 * ChTimeValue = Ticks_per_1s / ( Baudrate / 11 )
+		 *             = 11 * Ticks_per_1s / Baudrate
+		 *             = 220000 / Baudrate
+		 * The reload for t3.5 is 1.5 times this value and similary
+		 * for t3.5.
+		 */
+		usTimerT35_50us = ( 7UL * 220000UL ) / ( 2UL * ulBaudRate );
+	}
+	if( xMBPortTimersInit( ( USHORT ) usTimerT35_50us ) != TRUE )
+	{
+		eStatus = MB_EPORTERR;
+	}
     EXIT_CRITICAL_SECTION(  );
 
     return eStatus;
@@ -131,6 +121,7 @@ eMBRTUStart( void )
      */
 	eRcvState = STATE_RX_INIT;
 	vMBPortTimersStart( );
+	register_modbus_callbacks(&xMBRTUTransmitSuccess,&xMBRTUReceiveFSM);
 	EXIT_CRITICAL_SECTION(  );
 }
 
@@ -223,7 +214,7 @@ xMBRTUReceiveFSM( void )
 	UCHAR			ucRTUTmpBuf[MAX_PER_RECEIVE];
 	INT				usRTUReceiveCount;
     /* Read the characters. */
-    ( void )xMBPortSerialRead(ucRTUTmpBuf,&usRTUReceiveCount);
+    ( void )modbus_controller_read(ucRTUTmpBuf,&usRTUReceiveCount);
 
     switch ( eRcvState )
     {

@@ -1,16 +1,17 @@
-obj-m := my_modbus_module.o
+obj-m := modbus_controller_module.o
+#obj-m := modbus_device_module.o
 ccflags-y += -I$(PWD)
-my_modbus_module-objs := serdev_driver.o \
-                         serdev_syscalls.o \
-                         modbus_timer.o \
-                         modbuscontroller.o \
-                         modbus_timer.o \
-                         modbus_rtu/mbrtu.o \
-                         modbus_rtu/port_serial.o \
-                         modbus_rtu/port_event.o \
-                         modbus_rtu/port_timer.o \
-						 modbus_rtu/modbus.o \
-                         modbus_rtu/mbcrc.o
+modbus_controller_module-objs := modbus_timer.o \
+								 modbuscontroller.o \
+								 modbus_timer.o \
+								 modbus_rtu/mbrtu.o \
+								 modbus_rtu/port_event.o \
+								 modbus_rtu/port_timer.o \
+								 modbus_rtu/modbus.o \
+								 modbus_rtu/mbcrc.o
+
+modbus_device_module-obj := 	serdev_driver.o \
+								serdev_syscalls.o \
 
 ARCH = arm64
 CROSS_COMPILE=aarch64-linux-gnu-

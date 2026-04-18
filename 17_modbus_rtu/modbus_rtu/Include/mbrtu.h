@@ -34,8 +34,8 @@
 PR_BEGIN_EXTERN_C
 #endif
 #include "mb.h"
-eMBErrorCode eMBRTUInit(UCHAR ucPort, ULONG ulBaudRate,
-                             eMBParity eParity, UCHAR ucStopBits );
+
+eMBErrorCode eMBRTUInit(ULONG ulBaudRate);
 void            eMBRTUStart( void );
 void            eMBRTUStop( void );
 eMBErrorCode    eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength );

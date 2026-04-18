@@ -37,21 +37,32 @@
 #define MB_ADDRESS_BROADCAST 0
 #define MAX_PDU_SIZE         253
 
+/* -------------------------------------------------------------------------
+ * Meta Information & Global Variables
+ * ------------------------------------------------------------------------- */
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Van Tien");
+
 /* -------------------------------------------------------------------------- */
 /* Global Variables                              */
 /* -------------------------------------------------------------------------- */
+/* Lock for master, only thread can use in time, 
+ * migth be many threads from user try to read on modbus bus 
+ * */
+DEFINE_MUTEX(master_lock); 
 
 ModbusMaster    master;
 ModbusErrorInfo err          = MODBUS_NO_ERROR();
 
 static char     ucMBAddress;    /* Target Slave Address for current transaction */
-static int      iMBTimeout;     /* User-defined timeout value */
 static int      baudrate;       /* Stored baudrate for RTU initialization */
 
 char            pucMBFrame[MAX_PDU_SIZE];
 char            ucRcvAddress;
 
+DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);
 eMasterType     master_state = EM_IDLE;
+
 USHORT          usLength;
 eMBErrorCode    eStatus = MB_ENOERR;
 eMBEventType    eEvent;
@@ -101,10 +112,43 @@ static ModbusError exceptionCallback(const ModbusMaster *master, uint8_t address
 /* Internal Helper Functions                         */
 /* -------------------------------------------------------------------------- */
 
+static long send_and_wait_logic(int timeout, eMBEventType event)
+{
+    /* 1. Create a wait entry for the current process */
+    DEFINE_WAIT(wait);
+	/* Convert ms to kernel 'jiffies' (ticks) */
+    long timeout_jiffies = msecs_to_jiffies(timeout);
+
+    /* 2. PREPARE: Add to queue and set state to TASK_INTERRUPTIBLE
+       This makes the process "ready to sleep" but doesn't yield the CPU yet. */
+    prepare_to_wait(&my_wait_queue, &wait, TASK_INTERRUPTIBLE);
+
+    /* 3. TRIGGER: Start the hardware/event
+       Even if an interrupt happens NOW and calls wake_up(),
+       your 'wait' entry is already in the queue. */
+    xMBPortEventPost(event);
+
+    /* 4. CHECK: Ensure the event didn't happen in the microsecond
+       between 'prepare' and 'trigger'. */
+    if (master_state != EM_PR) 
+	{
+        /* 5. SLEEP: Yield the CPU
+		 * If tasklet run (preempt current thread(call wake up), the thread state will change to TASK_RUNNING)
+		 * In that case, the schedule function will return imediatelly.
+		 * */
+		 timeout_jiffies = schedule_timeout(timeout_jiffies);  
+  	}
+
+    /* 6. CLEANUP: Set state back to TASK_RUNNING and remove from queue */
+	__set_current_state(TASK_RUNNING);
+    finish_wait(&my_wait_queue, &wait);
+	return timeout_jiffies;
+}
+
 /**
  * @brief Formats the Modbus PDU using LightModbus builder functions.
  */
-static void buildreq(ModbusMaster *master, int function, int startAddress, int quantity)
+static int buildreq(ModbusMaster *master, int function, int startAddress, int quantity)
 {
     switch (function)
     {
@@ -122,7 +166,7 @@ static void buildreq(ModbusMaster *master, int function, int startAddress, int q
 
         default:
             /* Unsupported function codes */
-            return;
+            break;
     }
 
     if (!modbusIsOk(err))
@@ -130,7 +174,9 @@ static void buildreq(ModbusMaster *master, int function, int startAddress, int q
         pr_err("Error building request: %s(%s)\n",
             modbusErrorSourceStr(modbusGetErrorSource(err)),
             modbusErrorStr(modbusGetErrorCode(err)));
+		return 1;
     }
+	return 0;
 }
 
 /**
@@ -190,40 +236,9 @@ static eMBErrorCode eMBMasterPoll( void )
                     if( eStatus == MB_ENOERR )
                     {
                         master_state = EM_PR; /* Move to Processing Reply */
-                        ( void )xMBPortEventPost( EV_EXECUTE );
                     }
                 }
                 break;
-
-            case EV_EXECUTE:
-                if(master_state != EM_PR)
-                {
-                    pr_err("%s: EV_EXECUTE: Invalid state for execution\n", Poll_log);
-                }
-                else
-                {
-					/* Wake up master waiting in queue */
-                }
-                break;
-
-            case EV_FRAME_SENT:
-                /* Optional: Trigger Response Timeout Timer here */
-                break;
-
-            case EV_MASTER_TIMEOUT:
-                if(master_state != EM_WFR)
-                {
-                    pr_err("%s: Time out is expired but in illegal argument\n", Poll_log);
-                    eStatus = MB_EINVAL; 
-                }
-                else
-                {
-                    pr_info("%s: Time out is expired\n", Poll_log);
-                    eStatus = MB_ETIMEDOUT; 
-                    master_state = EM_PER;  
-                }
-                break;
-
             default:
                 break;
         }
@@ -260,7 +275,7 @@ bool ModbusInit(int baud)
  */
 bool ModbusStart(void)
 {
-    eMBErrorCode eStatus = eMBRTUInit(0, baudrate, 0, 0);
+    eMBErrorCode eStatus = eMBRTUInit(baudrate);
     if (eStatus != MB_ENOERR) return FALSE;
     xMBPortEventInit();
     eMBRTUStart();
@@ -289,44 +304,61 @@ void ModbusRun(void)
 /**
  * @brief Higher-level API to initiate a Modbus request.
  */
-void ModbusSend(char Address, int function, int startAddress, int quantity, int timeout)
+SendRetType ModbusSend(char Address, int function, int startAddress, int quantity, int timeout)
 {
-	/* 0. Lock the master */
+	int ret_val = ESEND_NOERR;
+	/* 0. Accquire the master lock*/
+	mutex_lock(&master_lock);
     /* 1. Build the PDU (Application Layer) */
-    buildreq(&master, function, startAddress, quantity);
+    if(buildreq(&master, function, startAddress, quantity))
+	{
+		ret_val = ESEND_RQINVAL;	
+		goto out;
+	}
     
     /* 2. Cache metadata for the upcoming response validation */
     ucMBAddress = Address;
-    iMBTimeout  = timeout;
 
-    /* 3. Trigger the Send Event to be handled by the state machine */
-    xMBPortEventPost(EV_MASTER_SEND_REQUEST);
-	/* 4. Start timmer for time out */
-
-	/* 5. Waiting in queue until recive frame or time out is due*/
-	
-	/* 6. Parsing to read input */
-	/* Application Layer: Parse the received PDU */
-	pr_info("usLength:%d\n",usLength);
-	err = modbusParseResponsePDU(&master,
-						  ucRcvAddress,
-						  modbusMasterGetRequest(&master),
-						  modbusMasterGetRequestLength(&master),
-						  pucMBFrame,
-						  usLength);
-
-	if (!modbusIsOk(err))
+    /* 3. Prepare and wating to recive or timeout*/
+	pr_info("ModbusSend: waiting\n");
+	long timeout_jiffies = send_and_wait_logic(timeout, EV_MASTER_SEND_REQUEST);
+    /* 4.  Process continues here after wake-up
+	 * Parsing to read input 	
+	 * Application Layer: Parse the received PDU
+	 * */
+	if (timeout_jiffies == 0)
 	{
-		pr_err("Error parsing request: %s(%s)\n",
-			modbusErrorSourceStr(modbusGetErrorSource(err)),
-			modbusErrorStr(modbusGetErrorCode(err)));
-		master_state = EM_PER;
+		/* Internal timer woke you up */
+		pr_info("Modbus Send: Request timeout\n");	
+		ret_val = ESEND_TIMEOUT;
 	}
 	else
 	{
-		pr_info("Response parsing successfully\n");
-		master_state = EM_IDLE;
-	}
+		/* Wake up when receving messes from slave */
+		pr_info("usLength:%d\n",usLength);
+		err = modbusParseResponsePDU(&master,
+							  ucRcvAddress,
+							  modbusMasterGetRequest(&master),
+							  modbusMasterGetRequestLength(&master),
+							  pucMBFrame,
+							  usLength);
 
+		if (!modbusIsOk(err))
+		{
+			pr_err("Error parsing request: %s(%s)\n",
+				modbusErrorSourceStr(modbusGetErrorSource(err)),
+				modbusErrorStr(modbusGetErrorCode(err)));
+			ret_val = ESEND_RPINVAL;	
+		}
+		else
+		{
+			pr_info("Response parsing successfully\n");
+			ret_val = ESEND_NOERR;
+		}
+	}
+out:
 	/* 7. Relase the master's lock */
+	master_state = EM_IDLE;
+	mutex_unlock(&master_lock);
+	return ret_val;
 }
