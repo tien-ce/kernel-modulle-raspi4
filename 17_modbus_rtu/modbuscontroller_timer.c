@@ -22,7 +22,7 @@
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
 #include <linux/kernel.h>
-#include "serdev_driver_dt_sysfs.h"
+#include "modbus_controller.h"
 /* --- Global-Static Variables --- */
 /* High-resolution timer structure managed by the kernel */
 static struct hrtimer my_hrtimer;

@@ -48,6 +48,7 @@ typedef enum
 	EM_IDLE,					/*!< Master is idle. */
 	EM_WFR,						/*!< Master waiting for reply. */
 	EM_PR,						/*!< Master processing reply. */
+	EM_PER,						/*!< Master processing error reply. */
 } eMasterType;
 
 typedef enum

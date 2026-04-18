@@ -35,7 +35,6 @@
 #include <linux/uaccess.h>          /* For copy_to_user and copy_from_user */
 #include <linux/slab.h>             /* For memory allocation (kmalloc/kzalloc) */
 #include <linux/mod_devicetable.h>  /* For ID tables (platform_device_id) */
-#include <linux/serdev.h>			/* For register to serdev (modbus_controller)*/
 /* -------------------------------------------------------------------------
  * Permission Macros
  * ------------------------------------------------------------------------- */
@@ -44,9 +43,18 @@
 #define RD_WR	0x11
 
 /* -------------------------------------------------------------------------
- * Global variable 
- * ------------------------------------------------------------------------- */
-extern struct serdev_device *modbus_controller;
+ * Enum definitions
+ * * ------------------------------------------------------------------------- */
+/**
+ * enum modev_names - Indices for the driver_data/match_data
+ */
+enum modev_names {
+	PCDEVA1X,
+	PCDEVB1X,
+	PCDEVC1X,
+	PCDEVD1X,
+};
+
 /* -------------------------------------------------------------------------
  * Device Configuration & Platform Data
  * ------------------------------------------------------------------------- */
@@ -62,39 +70,58 @@ struct device_config {
 };
 
 /**
- * struct pcdev_platform_data - Static data describing the device instance
- * @size:          Size of the device buffer
- * @perm:          Access permissions (RD_ONLY, etc.)
- * @serial_number: Unique identifier string
- * * Note: This information comes from the "outside" (Device Tree properties
- * or a board-specific platform_device registration).
+ * struct modbus_sensor_data - Configuration for a specific Modbus slave
+ * @slave_addr:    Modbus station address (from 'reg')
+ * @reg_count:     Number of registers defined in DT
+ * @reg_addresses: Array of 16-bit or 32-bit register offsets
+ * @reg_names:     Array of strings describing each register
  */
-struct pcdev_platform_data {
-	int size;
-	int perm;
-	const char *serial_number;
+struct modev_platform_data {
+	uint32_t		slave_addr;
+	uint32_t		reg_count;
+	uint32_t		*reg_perm;
+	uint32_t		*reg_address;
+	const char		**reg_name;
+};
+
+/* -------------------------------------------------------------------------
+ * Management Structures (Private Data)
+ * ------------------------------------------------------------------------- */
+
+/**
+ * struct modev_private_data - Per-device instance structure
+ * @pdata:      Reference to the a platform data
+ * @buffer:     Pointer to the dynamically allocated device memory
+ * @modbusdevice: Pointer to the device created in /sys/class
+ * @dev_num:    Specific <Major, Minor> pair for this instance
+ * @cdev:       Internal character device structure
+ * @perm:		Device file permision (not register), now it is always r/w permisison
+ * * This structure is the "Identity" of each matched device. It is stored 
+ * in filp->private_data during open() to be accessible in read/write.
+ */
+struct modev_private_data {
+	struct modev_platform_data	*pdata; 
+	uint32_t					*buffer;
+	struct device				*modbusdevice; 
+	dev_t						dev_num; 
+	struct cdev					cdev;
+	uint32_t					perm;
 };
 
 /**
- * enum pcdev_names - Indices for the driver_data/match_data
+ * struct modrv_private_data - Global driver management structure
+ * @total_devices:    Counter of successfully probed devices
+ * @modbusclass:        Pointer to the sysfs class (/sys/class/modbusclass)
+ * @device_num_base:  The starting device number (Major + first Minor)
+ * * This structure holds data that is shared across all instances 
+ * handled by this driver.
  */
-enum pcdev_names {
-	PCDEVA1X,
-	PCDEVB1X,
-	PCDEVC1X,
-	PCDEVD1X,
+struct modrv_private_data {
+	int					total_devices;
+	struct class		*modbusclass;
+	dev_t				device_num_base;
 };
 
-/*8 
- * enum send return type - Return value when modbus device request
- */
-typedef enum
-{
-	ESEND_NOERR,				/*!< Send successfully. */
-	ESEND_TIMEOUT,				/*!< Send Timeout. */
-	ESEND_RQINVAL,				/*!< Request Invalid. */
-	ESEND_RPINVAL,				/*!< Respone Invalid. */
-} SendRetType;
 /* -------------------------------------------------------------------------
  * Function Prototypes 
  * ------------------------------------------------------------------------- */
@@ -102,76 +129,9 @@ typedef enum
 /*
  * for File Operations (Syscalls) 
  * */
-loff_t pcd_llseek(struct file *filp, loff_t off, int whence);
-int pcd_open(struct inode *inode, struct file *filp);
-ssize_t pcd_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos);
-ssize_t pcd_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos);
-int pcd_release(struct inode *inode, struct file *filp);
-/*
- * for Modbus controller (Serdev device) 
- * */
-int modbus_controller_register(void);
-void modbus_controller_unregister(void);
-void modbus_controller_enable(bool rxEnable, bool txEnable);
-void modbus_controller_write(char *buffer, int length);
-void modbus_controller_read(char *buffer, int *count);
-void register_modbus_callbacks(bool (*tx_func)(void), bool (*rx_func)(void));
-
-/*
- *	For Modbus timer 
- */
-void timer_init(int usTimTimerout50us); 
-void timer_start(void);
-void timer_cancel(void);
-void timer_remove(void); 
-void timer_register_callback(bool (*hrtimer_expired_callback)(void));
-
-/* 
- * For Modbus application 
- * Bridge between app and link layer
- */ 
-
- 
-bool ModbusInit(int baud);
-bool ModbusStart(void);
-void ModbusRun(void);
-void ModbusDestroy(void);
-SendRetType ModbusSend(char Address, int function, int startAddress, int quantity, int timeout);
-
-/* -------------------------------------------------------------------------
- * Management Structures (Private Data)
- * ------------------------------------------------------------------------- */
-
-/**
- * struct pcdev_private_data - Per-device instance structure
- * @pdata:      Reference to the static platform data
- * @buffer:     Pointer to the dynamically allocated device memory
- * @pcd_device: Pointer to the device created in /sys/class
- * @dev_num:    Specific <Major, Minor> pair for this instance
- * @cdev:       Internal character device structure
- * * This structure is the "Identity" of each matched device. It is stored 
- * in filp->private_data during open() to be accessible in read/write.
- */
-struct pcdev_private_data {
-	struct pcdev_platform_data pdata; 
-	char *buffer;
-	struct device *pcd_device; 
-	dev_t dev_num; 
-	struct cdev cdev;
-};
-
-/**
- * struct pcdrv_private_data - Global driver management structure
- * @total_devices:    Counter of successfully probed devices
- * @pcd_class:        Pointer to the sysfs class (/sys/class/pcd_class)
- * @device_num_base:  The starting device number (Major + first Minor)
- * * This structure holds data that is shared across all instances 
- * handled by this driver.
- */
-struct pcdrv_private_data {
-	int total_devices;
-	struct class *pcd_class;
-	dev_t device_num_base;
-};
-
+loff_t modbus_llseek(struct file *filp, loff_t off, int whence);
+int modbus_open(struct inode *inode, struct file *filp);
+ssize_t modbus_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos);
+ssize_t modbus_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos);
+int modbus_release(struct inode *inode, struct file *filp);
 #endif /* SERDEV_DRIVER_DT_SYSFS_H */

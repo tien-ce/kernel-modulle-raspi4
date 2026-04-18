@@ -21,7 +21,7 @@
 #include <linux/string.h>
 #include <linux/irqflags.h>
 #include <linux/spinlock.h>
-#include "serdev_driver_dt_sysfs.h"
+#include "modbus_controller.h"
 /* Use kernel-standard inline attribute */
 #define INLINE                      inline
 

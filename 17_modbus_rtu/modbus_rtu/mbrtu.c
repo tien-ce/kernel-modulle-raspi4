@@ -159,7 +159,6 @@ eMBRTUReceive( UCHAR * pucRcvAddress, UCHAR * pucFrame, USHORT * pusLength )
 	else
 	{
 		eStatus = MB_EIO;
-		pr_err("Modbus RTU receivce: Size Problem\n");;
 	}
 
 	EXIT_CRITICAL_SECTION(  );
@@ -301,10 +300,8 @@ xMBRTUTimerT35Expired( void )
 
         /* Function called in an illegal state. */
     default:
-        //assert( ( eRcvState == STATE_RX_INIT ) ||
-                //( eRcvState == STATE_RX_RCV ) || ( eRcvState == STATE_RX_ERROR ) );
+		break;
     }
 	eRcvState = STATE_RX_IDLE;
-    //vMBPortTimersDisable(  );
     return xNeedPoll;
 }

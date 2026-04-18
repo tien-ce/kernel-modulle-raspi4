@@ -21,7 +21,7 @@
  */
 #include <linux/property.h>
 #include <linux/platform_device.h>
-#include "serdev_driver_dt_sysfs.h"
+#include "modbus_controller.h"
 
 #define MAX_LENGTH_BUFF 256
 #define BAUDRATE		115200
@@ -52,7 +52,7 @@ struct serdev_device_driver modbus_controller_driver = {
 	.probe = modbus_controller_probe,
 	.remove = modbus_controller_remove,
 	.driver = {
-		.name = "serdev,modbus_controller",
+		.name = "modbus-controller-driver",
 		.of_match_table = modbus_controller_ids,
 	},
 };
@@ -86,10 +86,8 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
     serdev_device_set_flow_control(serdev, false);
 
 	serdev_device_set_client_ops(serdev,&modbus_controller_ops);
-
 	(void)ModbusInit(BAUDRATE);
 	pr_info("Modbus Controller: Register uart\n");
-
     /* 4. Start Modbus Layer (Initializes Timers and Tasklets) */
     if(!ModbusStart()) {
         pr_err("Modbus controller - Failed to start Modbus link layer\n");
@@ -99,7 +97,12 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
 
     /* 6. Send initial test command */
     ModbusSend(SLAVE_ADDRESS, 0x03, 0x01, 1,20);
-    
+    /* 7. Populate child nodes (sensors) defined in Device Tree */
+	status = devm_of_platform_populate(&serdev->dev);
+	if (status) {
+		pr_err("Modbus controller - Failed to populate child devices: %d\n", status);
+		goto err_close_serdev;
+	}
     pr_info("Modbus controller - Probe successful!\n");
     return 0;
 
@@ -116,6 +119,7 @@ err_close_serdev:
  */
 static void modbus_controller_remove(struct serdev_device *serdev) {
 	pr_info("Modbus controller - Now I am in the remove function\n");
+	ModbusDestroy();
 	serdev_device_close(serdev);
 }
 
@@ -192,13 +196,13 @@ static int __init modbus_controller_init (void)
 	{
 		pr_err("Modbus controller - Error! Could not load driver\n");
 	}
+	pr_info ("Init successfully\n");
 	return ret_val;
 }
 
 static void __exit modbus_controller_exit (void)
 {
 	serdev_device_driver_unregister(&modbus_controller_driver);
-	ModbusDestroy();
 }
 
 module_init(modbus_controller_init);

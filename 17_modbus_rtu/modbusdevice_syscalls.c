@@ -1,5 +1,5 @@
-#include "serdev_driver_dt_sysfs.h"
-static int check_permission(int dev_per, int acc_mode)
+#include "modbusdevice_sysfs.h"
+static int check_permission(uint32_t dev_per, uint32_t acc_mode)
 {
 	if (dev_per == RD_WR)
 		return 0;
@@ -15,13 +15,13 @@ static int check_permission(int dev_per, int acc_mode)
 }
 		
 /* File oprations */
-loff_t pcd_llseek (struct file *filp, loff_t off, int whence)
+loff_t modbus_llseek (struct file *filp, loff_t off, int whence)
 {
     pr_info("lseek requested\n");
     loff_t temp; 
     /* Extract private data from file pointer */
-    struct pcdev_private_data *pcd_data = (struct pcdev_private_data*)filp->private_data;
-    unsigned max_size = pcd_data->pdata.size;
+    struct modev_private_data *modb_data = (struct modev_private_data*)filp->private_data;
+    unsigned max_size = modb_data->pdata->reg_count * sizeof(*modb_data->buffer);
     switch (whence){
 	    case SEEK_SET:
 		    if (off > max_size || off < 0)
@@ -46,46 +46,46 @@ loff_t pcd_llseek (struct file *filp, loff_t off, int whence)
     return filp->f_pos;
 }
 
-int pcd_open (struct inode *inode, struct file * filp)
+int modbus_open (struct inode *inode, struct file * filp)
 {
     pr_info("open was was called\n");
     /* Find out what device file open was attemped by user space */
     int minor = MINOR(inode->i_rdev);
     int reval;
     pr_info("minor number = %d\n",minor); 
-    struct pcdev_private_data *pcd_data;
+    struct modev_private_data *modb_data;
     /* Get private data struce */
-    pcd_data = container_of (inode->i_cdev,struct pcdev_private_data,cdev);
+    modb_data = container_of (inode->i_cdev,struct modev_private_data,cdev);
     /* Save data into private data of file structure (using for other method) */
-    filp->private_data = pcd_data;
+    filp->private_data = modb_data;
 
     /* Check permission */
-    reval = check_permission(pcd_data->pdata.perm, filp->f_mode);
+    reval = check_permission(modb_data->perm, filp->f_mode);
     if (!reval)
     {
-	pr_info ("Open was succesful\n");
+		pr_info ("Open was succesful\n");
     }
     else {
-	pr_info ("Open with unacceptable permission\n");
-	return reval;	
+		pr_info ("Open with unacceptable permission\n");
+		return reval;	
     }
     return 0;
 }
 
-ssize_t pcd_read (struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
+ssize_t modbus_read (struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
     pr_info("read requested for %zu bytes\n",count);
     pr_info("current file postions = %lld\n",*f_pos);
     /* Extract private data from file pointer */
-    struct pcdev_private_data *pcd_data = (struct pcdev_private_data*)filp->private_data;
-    unsigned max_size = pcd_data->pdata.size;
+    struct modev_private_data *modb_data = (struct modev_private_data*)filp->private_data;
+    unsigned max_size = modb_data->pdata->reg_count * sizeof(*modb_data->buffer);
     /* Adjust the 'count' */
     if ((*f_pos + count ) > max_size)
 	    count = max_size - *f_pos;
 
     /*Copy to user*/
     int reval = 0;
-    reval = copy_to_user(buff,pcd_data->buffer + *(f_pos),count);
+    reval = copy_to_user(buff,modb_data->buffer + *(f_pos),count);
     if (reval)
 	    return -EFAULT;
 
@@ -97,13 +97,13 @@ ssize_t pcd_read (struct file *filp, char __user *buff, size_t count, loff_t *f_
     pr_info("Updated file positon = %lld\n",*f_pos);
     return count;
 }
-ssize_t pcd_write (struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
+ssize_t modbus_write (struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
 {
     pr_info("write requested for %zu bytes\n",count);
     pr_info("current file postions = %lld\n",*f_pos);
     /* Extract private data from file pointer */
-    struct pcdev_private_data *pcd_data = (struct pcdev_private_data*)filp->private_data;
-    unsigned max_size = pcd_data->pdata.size;
+    struct modev_private_data *modb_data = (struct modev_private_data*)filp->private_data;
+    unsigned max_size = modb_data->pdata->reg_count * sizeof(*modb_data->buffer);
     /* Adjust the 'count' */
     if ((*f_pos + count ) > max_size)
 	    count = max_size - *f_pos;
@@ -111,7 +111,7 @@ ssize_t pcd_write (struct file *filp, const char __user *buff, size_t count, lof
 	    return -ENOMEM;
     /*Copy from user*/
     int reval = 0;
-    reval = copy_from_user(pcd_data->buffer + *f_pos,buff,count);
+    reval = copy_from_user(modb_data->buffer + *f_pos,buff,count);
     if (reval)
 	    return -EFAULT;
 
@@ -123,7 +123,8 @@ ssize_t pcd_write (struct file *filp, const char __user *buff, size_t count, lof
     pr_info("Updated file positon = %lld\n",*f_pos);
     return count;
 }
-int pcd_release (struct inode *inode, struct file *filp)
+
+int modbus_release (struct inode *inode, struct file *filp)
 {
     pr_info("close was sucessful\n");
     return 0;

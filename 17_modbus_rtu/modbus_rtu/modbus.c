@@ -51,21 +51,20 @@ MODULE_AUTHOR("Van Tien");
  * */
 DEFINE_MUTEX(master_lock); 
 
-ModbusMaster    master;
-ModbusErrorInfo err          = MODBUS_NO_ERROR();
+static ModbusMaster    master;
+static ModbusErrorInfo err          = MODBUS_NO_ERROR();
 
-static char     ucMBAddress;    /* Target Slave Address for current transaction */
+static unsigned char     ucMBAddress;    /* Target Slave Address for current transaction */
 static int      baudrate;       /* Stored baudrate for RTU initialization */
 
-char            pucMBFrame[MAX_PDU_SIZE];
-char            ucRcvAddress;
+static unsigned char			pucMBFrame[MAX_PDU_SIZE];
+static uint16_t          usLength;
 
-DECLARE_WAIT_QUEUE_HEAD(my_wait_queue);
-eMasterType     master_state = EM_IDLE;
+DECLARE_WAIT_QUEUE_HEAD(send_wait_queue);
+static eMasterType     master_state = EM_IDLE;
 
-USHORT          usLength;
-eMBErrorCode    eStatus = MB_ENOERR;
-eMBEventType    eEvent;
+static eMBErrorCode    eStatus = MB_ENOERR;
+static eMBEventType    eEvent;
 
 /* -------------------------------------------------------------------------- */
 /* LightModbus Callbacks                          */
@@ -121,7 +120,7 @@ static long send_and_wait_logic(int timeout, eMBEventType event)
 
     /* 2. PREPARE: Add to queue and set state to TASK_INTERRUPTIBLE
        This makes the process "ready to sleep" but doesn't yield the CPU yet. */
-    prepare_to_wait(&my_wait_queue, &wait, TASK_INTERRUPTIBLE);
+    prepare_to_wait(&send_wait_queue, &wait, TASK_INTERRUPTIBLE);
 
     /* 3. TRIGGER: Start the hardware/event
        Even if an interrupt happens NOW and calls wake_up(),
@@ -130,7 +129,7 @@ static long send_and_wait_logic(int timeout, eMBEventType event)
 
     /* 4. CHECK: Ensure the event didn't happen in the microsecond
        between 'prepare' and 'trigger'. */
-    if (master_state != EM_PR) 
+    if (master_state != EM_PR || master_state != EM_PER) 
 	{
         /* 5. SLEEP: Yield the CPU
 		 * If tasklet run (preempt current thread(call wake up), the thread state will change to TASK_RUNNING)
@@ -141,7 +140,7 @@ static long send_and_wait_logic(int timeout, eMBEventType event)
 
     /* 6. CLEANUP: Set state back to TASK_RUNNING and remove from queue */
 	__set_current_state(TASK_RUNNING);
-    finish_wait(&my_wait_queue, &wait);
+    finish_wait(&send_wait_queue, &wait);
 	return timeout_jiffies;
 }
 
@@ -218,6 +217,7 @@ static eMBErrorCode eMBMasterPoll( void )
 
             case EV_FRAME_RECEIVED:
                 /* Validation: Only accept frames when waiting for a reply */
+				unsigned char ucRcvAddress;
                 if(master_state != EM_WFR)
                 {
                     pr_err("%s: EV_FRAME_RECEIVED: Unexpected frame, master not in WFR state\n", Poll_log);
@@ -226,18 +226,25 @@ static eMBErrorCode eMBMasterPoll( void )
                 else
                 {
                     pr_info("%s: EV_FRAME_RECEIVED: Received frame\n", Poll_log);
-                    /* Finalize RTU reception and disable T35 timer */
-                    vMBPortTimersCancel();
                     eStatus = eMBRTUReceive( &ucRcvAddress, pucMBFrame, &usLength );
-					for(int i = 0; i < usLength; i++)
+					if (ucRcvAddress != ucMBAddress)
 					{
-						pr_info("pucMBFrame[%d]=0x%x\n",i,pucMBFrame[i]);
+						pr_info("%s: EV_FRAME_RECEIVED: Invalid address\n", Poll_log);
+						master_state = EM_PER; /* Move to Processing Error Reply */
 					}
-                    if( eStatus == MB_ENOERR )
-                    {
-                        master_state = EM_PR; /* Move to Processing Reply */
-                    }
+					else
+					{
+						for(int i = 0; i < usLength; i++)
+						{
+							pr_info("pucMBFrame[%d]=0x%x\n",i,pucMBFrame[i]);
+						}
+						if( eStatus == MB_ENOERR )
+						{
+							master_state = EM_PR; /* Move to Processing Reply */
+						}
+					}
                 }
+				wake_up_interruptible(&send_wait_queue);
                 break;
             default:
                 break;
@@ -337,7 +344,7 @@ SendRetType ModbusSend(char Address, int function, int startAddress, int quantit
 		/* Wake up when receving messes from slave */
 		pr_info("usLength:%d\n",usLength);
 		err = modbusParseResponsePDU(&master,
-							  ucRcvAddress,
+							  ucMBAddress,
 							  modbusMasterGetRequest(&master),
 							  modbusMasterGetRequestLength(&master),
 							  pucMBFrame,
@@ -362,3 +369,11 @@ out:
 	mutex_unlock(&master_lock);
 	return ret_val;
 }
+EXPORT_SYMBOL_GPL(ModbusSend);
+
+void ModbusReceive (unsigned char *buffer, uint16_t *length)
+{
+	*length = usLength;
+	uiPortMemcpy(buffer,pucMBFrame,usLength);	
+}
+EXPORT_SYMBOL_GPL(ModbusReceive);
