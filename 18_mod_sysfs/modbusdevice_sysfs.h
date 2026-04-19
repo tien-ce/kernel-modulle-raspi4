@@ -43,7 +43,6 @@
 #define RD_ONLY 0x01
 #define WR_ONLY 0x10
 #define RD_WR	0x11
-
 /* -------------------------------------------------------------------------
  * Enum definitions
  * * ------------------------------------------------------------------------- */
@@ -121,7 +120,7 @@ struct modev_reg_attr {
  * @reg_attrs:  Array of per-register sysfs attribute wrappers (one per DT register)
  * @attr_ptrs:  NULL-terminated array of struct attribute* for sysfs_create_group
  * @attr_group: Attribute group passed to sysfs_create/remove_group
- * @ival_sampling: Interval time between reading (avoid multiple applications request in the same time)
+ * @inval_sampling: Interval time between reading (avoid multiple applications request in the same time)
  * * This structure is the "Identity" of each matched device. It is stored
  * in filp->private_data during open() to be accessible in read/write.
  */
@@ -135,7 +134,7 @@ struct modev_private_data {
 	dev_t						 dev_num;
 	struct cdev					 cdev;
 	uint32_t					 perm;
-	uint32_t					 ival_sampl;
+	uint32_t					 inval_sampl;
 	struct attribute_group		 attr_group;
 };
 
