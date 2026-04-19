@@ -35,6 +35,7 @@
 #include <linux/uaccess.h>          /* For copy_to_user and copy_from_user */
 #include <linux/slab.h>             /* For memory allocation (kmalloc/kzalloc) */
 #include <linux/mod_devicetable.h>  /* For ID tables (platform_device_id) */
+#include <linux/sysfs.h>            /* For sysfs_create_file / device_attribute */
 /* -------------------------------------------------------------------------
  * Permission Macros
  * ------------------------------------------------------------------------- */
@@ -106,6 +107,7 @@ struct modev_private_data {
 	dev_t						dev_num; 
 	struct cdev					cdev;
 	uint32_t					perm;
+	uint32_t					inval_sampl;
 };
 
 /**
