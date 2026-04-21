@@ -27,7 +27,7 @@ For the driver architecture overview, see README.md in this directory.
         3.4  Seeking
   4.  Interface B — Sysfs (/sys/class/modbusclass)
         4.1  Reading Attributes
-        4.2  Writing Attributes — the Binary Requirement
+        4.2  Writing Attributes
   5.  The Read Cache — Shared Behaviour Between Both Interfaces
   6.  Error Codes
   7.  Concurrency
@@ -48,7 +48,7 @@ interfaces that co-exist and share the same internal state.
   SYSFS (/sys/class/modbusclass/<device>/)
     Designed for shell scripts, monitoring tools, and quick inspection.
     Values are returned as human-readable ASCII decimal text.  Configuration
-    writes are raw binary (explained in section 4.2).
+    writes are plain ASCII decimal strings (explained in section 4.2).
 
 Both interfaces trigger the same internal read path — the same cache, the
 same Modbus transaction, the same mutex.  Reading from sysfs and reading
@@ -308,7 +308,7 @@ and as non-zero exit codes from shell commands (cat, tee).
 
   EINVAL  (22)
     For write(..) on /dev: the buffer was not exactly 5 bytes.
-    For sysfs store: the buffer was not exactly 4 bytes.
+    For sysfs store: a non-numeric or out-of-range string was written.
     Also returned by lseek(..) if the target position is out of bounds.
 
   ENOSYS  (38)
