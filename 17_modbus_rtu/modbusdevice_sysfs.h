@@ -36,53 +36,38 @@
 #include <linux/slab.h>             /* For memory allocation (kmalloc/kzalloc) */
 #include <linux/mod_devicetable.h>  /* For ID tables (platform_device_id) */
 #include <linux/sysfs.h>            /* For sysfs_create_file / device_attribute */
+#include <linux/ktime.h>			/* For ktime_t, ktimems_delta */
 /* -------------------------------------------------------------------------
  * Permission Macros
  * ------------------------------------------------------------------------- */
-#define RD_ONLY 0x01
-#define WR_ONLY 0x10
-#define RD_WR	0x11
+#define RD_ONLY		0x01
+#define WR_ONLY		0x10
+#define RD_WR		0x11
 
+#define MAX_VAL			10	/* Maximum register address for value*/
 /* -------------------------------------------------------------------------
  * Enum definitions
  * * ------------------------------------------------------------------------- */
 /**
- * enum modev_names - Indices for the driver_data/match_data
+ * enum modev_idx - Indices for the driver_data/match_data
  */
-enum modev_names {
-	PCDEVA1X,
-	PCDEVB1X,
-	PCDEVC1X,
-	PCDEVD1X,
-};
+typedef enum DEVICE_TYPE {
+	CO_SENSOR,
+	PM_SENSOR,
+} mbdev_t;
 
 /* -------------------------------------------------------------------------
  * Device Configuration & Platform Data
+
  * ------------------------------------------------------------------------- */
-
-/**
- * struct device_config - Hardware-specific configuration
- * @item1: Example config parameter
- * @item2: Example config parameter
- */
-struct device_config {
-	int item1;
-	int item2;
-};
-
 /**
  * struct modbus_sensor_data - Configuration for a specific Modbus slave
  * @slave_addr:    Modbus station address (from 'reg')
- * @reg_count:     Number of registers defined in DT
  * @reg_addresses: Array of 16-bit or 32-bit register offsets
- * @reg_names:     Array of strings describing each register
  */
 struct modev_platform_data {
 	uint32_t		slave_addr;
-	uint32_t		reg_count;
-	uint32_t		*reg_perm;
 	uint32_t		*reg_address;
-	const char		**reg_name;
 };
 
 /* -------------------------------------------------------------------------
@@ -91,23 +76,30 @@ struct modev_platform_data {
 
 /**
  * struct modev_private_data - Per-device instance structure
- * @pdata:      Reference to the a platform data
- * @buffer:     Pointer to the dynamically allocated device memory
- * @modbusdevice: Pointer to the device created in /sys/class
- * @dev_num:    Specific <Major, Minor> pair for this instance
- * @cdev:       Internal character device structure
- * @perm:		Device file permision (not register), now it is always r/w permisison
+ * @pdata:			Reference to the a platform data
+ * @buffer:			Pointer to the dynamically allocated device memory
+ * @modbusdevice:	Pointer to the device created in /sys/class
+ * @dev_num:		Specific <Major, Minor> pair for this instance
+ * @cdev:			Internal character device structure
+ * @perm:			Device file permision (not register), now it is always r/w permisison
+ * @timeout:		Reading value timeout
+ * @inval_sampl:	Interval sampling, avoid reading in a short period of time from multiple user applications 
+ * @pre_read:		The lastest time of sucessfull reading 
+ * @num_val:		The number of value register, using in read callback.
  * * This structure is the "Identity" of each matched device. It is stored 
  * in filp->private_data during open() to be accessible in read/write.
  */
 struct modev_private_data {
 	struct modev_platform_data	*pdata; 
-	uint32_t					*buffer;
+	uint16_t					*buffer;
 	struct device				*modbusdevice; 
 	dev_t						dev_num; 
 	struct cdev					cdev;
 	uint32_t					perm;
 	uint32_t					inval_sampl;
+	uint32_t					timeout;
+	uint32_t					num_val;					
+	ktime_t						previous_read;
 };
 
 /**
@@ -127,7 +119,21 @@ struct modrv_private_data {
 /* -------------------------------------------------------------------------
  * Function Prototypes 
  * ------------------------------------------------------------------------- */
+/*
+ *	Sysfs attribute callback functions
+ */
+/* Shared attribute */
+ssize_t interval_show(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t interval_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
 
+ssize_t timeout_show(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t timeout_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count);
+ssize_t slave_address_show(struct device *dev, struct device_attribute *attr, char *buf);
+/* Specific attribute */
+ssize_t co_show(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t pm1_0_show(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t pm2_5_show(struct device *dev, struct device_attribute *attr, char *buf);
+ssize_t pm10_show(struct device *dev, struct device_attribute *attr, char *buf);
 /*
  * for File Operations (Syscalls) 
  * */
