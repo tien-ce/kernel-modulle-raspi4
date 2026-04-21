@@ -1,0 +1,362 @@
+==============================================================================
+  Modbus RTU Kernel Driver — User-Space Interaction Guide
+  Raspberry Pi 4 · Linux 6.12 · arm64
+  Author: Van Tien <tien11102004@gmail.com>
+==============================================================================
+
+This document explains in detail how user-space programs interact with the
+Modbus RTU kernel driver.  It covers both available interfaces — the
+character device (/dev) and the sysfs filesystem (/sys) — their exact
+behaviours, data formats, and constraints.
+
+For working code examples, see the companion user-space repository:
+  https://github.com/tien-ce/Linux---rasp-user-space/tree/main/05_device_modbus
+
+For the driver architecture overview, see README.md in this directory.
+
+------------------------------------------------------------------------------
+  TABLE OF CONTENTS
+------------------------------------------------------------------------------
+
+  1.  The Two User-Space Interfaces
+  2.  What Appears in the System After Loading
+  3.  Interface A — Character Device (/dev)
+        3.1  Opening the Device
+        3.2  Reading Sensor Values
+        3.3  Writing Configuration
+        3.4  Seeking
+  4.  Interface B — Sysfs (/sys/class/modbusclass)
+        4.1  Reading Attributes
+        4.2  Writing Attributes — the Binary Requirement
+  5.  The Read Cache — Shared Behaviour Between Both Interfaces
+  6.  Error Codes
+  7.  Concurrency
+
+
+==============================================================================
+  1.  THE TWO USER-SPACE INTERFACES
+==============================================================================
+
+The driver exposes each connected Modbus slave through two parallel
+interfaces that co-exist and share the same internal state.
+
+  CHARACTER DEVICE (/dev/co_sensor, /dev/pm_sensor)
+    Designed for programmatic use from C or any language with POSIX file I/O.
+    Data is transferred as raw binary.  The caller reads a buffer of uint16_t
+    register values and writes 5-byte binary control packets.
+
+  SYSFS (/sys/class/modbusclass/<device>/)
+    Designed for shell scripts, monitoring tools, and quick inspection.
+    Values are returned as human-readable ASCII decimal text.  Configuration
+    writes are raw binary (explained in section 4.2).
+
+Both interfaces trigger the same internal read path — the same cache, the
+same Modbus transaction, the same mutex.  Reading from sysfs and reading
+from /dev at the same time is safe and shares cache.
+
+
+==============================================================================
+  2.  WHAT APPEARS IN THE SYSTEM AFTER LOADING
+==============================================================================
+
+After loading both kernel modules and applying the Device Tree overlay, the
+following nodes are created.  The names come directly from the DTS child node
+names (co_sensor, pm_sensor).
+
+  Character devices:
+    /dev/co_sensor
+    /dev/pm_sensor
+
+  Sysfs nodes:
+    /sys/class/modbusclass/co_sensor/
+      ├── co_value          read-only   CO concentration (raw register value)
+      ├── slave_address     read-only   Modbus station address
+      ├── interval_time     read/write  Cache refresh interval (ms)
+      └── timeout           read/write  Modbus transaction timeout (ms)
+
+    /sys/class/modbusclass/pm_sensor/
+      ├── pm1_0_value       read-only   PM1.0 concentration
+      ├── pm2_5_value       read-only   PM2.5 concentration
+      ├── pm10_value        read-only   PM10 concentration (requires CONFIG_PM_SENSOR_PM10)
+      ├── slave_address     read-only   Modbus station address
+      ├── interval_time     read/write  Cache refresh interval (ms)
+      └── timeout           read/write  Modbus transaction timeout (ms)
+
+  Default values at probe time:
+    interval_time = 1000 ms
+    timeout       = 100 ms
+
+  These defaults are compiled in (INTERVAL and TIMEOUT macros in
+  modbusdevice.c).  They can be changed at runtime through either interface.
+
+
+==============================================================================
+  3.  INTERFACE A — CHARACTER DEVICE (/dev)
+==============================================================================
+
+------------------------------------------------------------------------------
+  3.1  Opening the Device
+------------------------------------------------------------------------------
+
+Open the device with open(..).  Use O_RDONLY for reads, O_WRONLY for writes,
+or O_RDWR for both.  All devices are currently configured with read/write
+permission, so any mode succeeds.
+
+Opening does not trigger any Modbus bus activity.  It only looks up the
+device's private data structure and attaches it to the file descriptor.
+
+Each read or write operation should use a freshly opened (or seeked-to-zero)
+file descriptor.  See section 3.4 for the reason.
+
+------------------------------------------------------------------------------
+  3.2  Reading Sensor Values
+------------------------------------------------------------------------------
+
+read(..) returns the raw register buffer as a sequence of uint16_t values.
+One uint16_t per register address listed in lsmy,reg-addresses in the DTS.
+
+  CO sensor — 1 register, 2 bytes total:
+    Byte 0–1:  uint16_t  CO concentration value
+
+  PM sensor — 2 registers, 4 bytes total (default, without CONFIG_PM_SENSOR_PM10):
+    Byte 0–1:  uint16_t  PM1.0 concentration
+    Byte 2–3:  uint16_t  PM2.5 concentration
+
+  PM sensor — 3 registers, 6 bytes total (with CONFIG_PM_SENSOR_PM10):
+    Byte 0–1:  uint16_t  PM1.0 concentration
+    Byte 2–3:  uint16_t  PM2.5 concentration
+    Byte 4–5:  uint16_t  PM10 concentration
+
+Byte order note:
+  The register data from the Modbus slave arrives in big-endian order (MSB
+  first, per the Modbus specification) and is stored that way in the buffer.
+  The caller is responsible for interpreting the bytes correctly.  The
+  user-space reference code handles this conversion — see the link at the top
+  of this document.
+
+Always read the full buffer in one read(..) call.  The internal file-position
+counter increments by element size (sizeof uint16_t), not by bytes.  Partial
+reads — less than the full buffer — cause the next read to skip elements and
+return wrong data.  If you reuse a file descriptor across multiple reads,
+call lseek(..) to reset the position to 0 first (see section 3.4).
+
+On success, read(..) returns the number of bytes copied.
+On failure, it returns a negative value and sets errno (see section 6).
+
+When read(..) is called, the driver first checks the read cache (section 5).
+If the cache is still valid, the data is returned immediately from memory —
+no Modbus transaction occurs.  If the cache is stale, the driver issues a
+Read Holding Registers (FC 0x03) request on the RS485 bus for each register,
+waits for the response, and updates the cache before returning.
+
+------------------------------------------------------------------------------
+  3.3  Writing Configuration
+------------------------------------------------------------------------------
+
+write(..) configures runtime parameters of the driver for that device.
+It does NOT send anything to the Modbus slave — it only updates in-kernel
+state.
+
+The write packet is exactly 5 bytes:
+
+  Byte 0:      1-byte function code
+  Bytes 1–4:   32-bit unsigned value, little-endian (LSB first)
+
+  Function code 0x01  —  set interval_time (milliseconds)
+  Function code 0x02  —  set timeout (milliseconds)
+
+The call must deliver exactly 5 bytes in one write(..).  Any other size
+causes an EINVAL error.
+
+For a complete, working implementation of the packet format and the write
+call, see:
+  https://github.com/tien-ce/Linux---rasp-user-space/tree/main/05_device_modbus
+
+That code defines TIMEOUT_FUNC (0x01) and INTERVAL_FUNC (0x02) in config.h,
+builds the 5-byte packet in raw_pacakge(), and sends it via write_config().
+
+------------------------------------------------------------------------------
+  3.4  Seeking
+------------------------------------------------------------------------------
+
+lseek(..) is supported with SEEK_SET, SEEK_CUR, and SEEK_END.
+
+The file "size" is:   num_registers × 2 bytes
+  CO sensor:          2 bytes
+  PM sensor:          4 bytes (or 6 with PM10)
+
+The most common use is seeking back to position 0 before a second read from
+a persistent file descriptor:
+  lseek(fd, 0, SEEK_SET)
+
+If you open and close the file for each read, seeking is unnecessary.
+
+
+==============================================================================
+  4.  INTERFACE B — SYSFS (/sys/class/modbusclass)
+==============================================================================
+
+------------------------------------------------------------------------------
+  4.1  Reading Attributes
+------------------------------------------------------------------------------
+
+All readable sysfs attributes return a single ASCII decimal number followed
+by a newline character ('\n').
+
+  cat /sys/class/modbusclass/co_sensor/co_value
+  cat /sys/class/modbusclass/pm_sensor/pm1_0_value
+  cat /sys/class/modbusclass/pm_sensor/pm2_5_value
+  cat /sys/class/modbusclass/pm_sensor/pm10_value    (CONFIG_PM_SENSOR_PM10 only)
+  cat /sys/class/modbusclass/co_sensor/slave_address
+  cat /sys/class/modbusclass/co_sensor/interval_time
+  cat /sys/class/modbusclass/co_sensor/timeout
+
+Reading co_value, pm1_0_value, pm2_5_value, or pm10_value triggers the same
+read path as the character device (cache check → Modbus transaction if stale).
+
+Reading slave_address, interval_time, or timeout returns in-memory values
+immediately, with no bus activity.
+
+Output values are unsigned decimal integers.  A failed read (e.g. sensor
+timeout) causes the cat command to print an error from errno and exit
+non-zero — no partial output is produced.
+
+------------------------------------------------------------------------------
+  4.2  Writing Attributes
+------------------------------------------------------------------------------
+
+interval_time and timeout accept writes as a plain ASCII decimal string,
+which is the standard Linux sysfs convention.
+
+From a shell:
+  echo 2000 | sudo tee /sys/class/modbusclass/co_sensor/interval_time
+  echo 500  | sudo tee /sys/class/modbusclass/co_sensor/timeout
+
+The kernel uses kstrtou32() to parse the string, so a trailing newline
+(which echo always adds) is handled correctly.  Any non-numeric or
+out-of-range string returns EINVAL.
+
+From a program, open the sysfs path in text write mode and write the
+decimal value as a string, e.g.  write(fd, "2000", 4).
+
+slave_address is read-only.  Attempting to write it is rejected by the
+kernel sysfs framework.
+
+
+==============================================================================
+  5.  THE READ CACHE — SHARED BEHAVIOUR BETWEEN BOTH INTERFACES
+==============================================================================
+
+Both interfaces share a single read cache per device.  Understanding the
+cache prevents unexpected behaviour and unnecessary bus load.
+
+How it works:
+
+  Each device stores a timestamp (previous_read) of the last successful
+  Modbus read.  When any read is requested — via /dev or via sysfs — the
+  driver computes:
+
+    elapsed = now − previous_read   (in milliseconds)
+
+  If elapsed <= interval_time:
+    The cached buffer is returned immediately.  No Modbus transaction occurs.
+    The call returns in microseconds.
+
+  If elapsed > interval_time (or no previous read exists):
+    The driver acquires the global Modbus master mutex, sends one FC 0x03
+    request per register, waits for the slave response, validates the CRC,
+    updates the buffer, records the timestamp, then returns the data.
+
+What this means in practice:
+
+  - Multiple processes reading the same sensor simultaneously all get the
+    same cached value until interval_time expires.  Only the first reader
+    after a cache miss takes the mutex and hits the bus.
+
+  - Setting interval_time to your intended poll rate and reading as fast as
+    you like has no extra cost.  Reads within the interval window are free.
+
+  - Setting interval_time to 0 forces a fresh bus read on every call.
+    This is fine functionally but increases RS485 bus load proportionally.
+
+  - The cache is per-device.  The CO sensor and PM sensor each have their
+    own timestamp and interval.  They do not share a cache.
+
+  - The timeout parameter controls how long the driver waits for a slave
+    response during a cache-miss transaction.  If the slave does not reply
+    within timeout ms, the read returns ETIMEDOUT.  The cache timestamp is
+    NOT updated on a failed read, so the next read attempt will try the bus
+    again immediately.
+
+
+==============================================================================
+  6.  ERROR CODES
+==============================================================================
+
+Errors are returned as negative errno values from read(..) and write(..),
+and as non-zero exit codes from shell commands (cat, tee).
+
+  ETIMEDOUT  (110)
+    The Modbus slave did not respond within the configured timeout.
+    Most common cause: wrong slave address, bad RS485 wiring, slave powered
+    off, or timeout set too short.
+
+  EPROTO  (71)
+    The slave responded but the CRC was invalid, or the response contained
+    a different slave address than expected.  Most common cause: baud rate
+    mismatch between driver (9600) and slave, or bus noise.
+
+  EINVAL  (22)
+    For write(..) on /dev: the buffer was not exactly 5 bytes.
+    For sysfs store: the buffer was not exactly 4 bytes.
+    Also returned by lseek(..) if the target position is out of bounds.
+
+  ENOSYS  (38)
+    The function code byte in a write(..) packet (byte 0) was not 0x01 or
+    0x02.
+
+  EFAULT  (14)
+    A NULL or invalid user-space pointer was passed to read(..) or write(..).
+
+  EPERM  (1)
+    The file was opened with an access mode incompatible with the device
+    permission setting (e.g. O_WRONLY on a read-only device).  Currently all
+    devices are read/write, so this should not occur.
+
+
+==============================================================================
+  7.  CONCURRENCY
+==============================================================================
+
+Global mutex:
+  A single mutex (master_lock in modbus.c) protects all Modbus bus
+  transactions across all devices.  Only one FC 0x03 transaction runs at
+  any given moment.  If two processes try to read from different devices at
+  the same time, the second waits in the kernel until the first transaction
+  completes (or times out).
+
+Cache reduces contention:
+  Cache hits do not acquire the mutex.  A busy system where all processes
+  read within the cache window has zero mutex contention.
+
+Per-process file descriptors:
+  Each process (or thread) should use its own file descriptor.  The file
+  position (f_pos) is per file descriptor and is not thread-safe.  Sharing
+  one fd across threads risks position corruption and incorrect reads.
+
+Recommended pattern:
+  Open → read full buffer → close.  This is the simplest and safest pattern.
+  Avoid long-lived open file descriptors unless you are careful to lseek to
+  0 before each read.
+
+------------------------------------------------------------------------------
+
+User-space reference code (CO sensor, with PM sensor assumed complete):
+  https://github.com/tien-ce/Linux---rasp-user-space/tree/main/05_device_modbus
+
+Kernel driver source:
+  https://github.com/tien-ce/kernel-modulle-raspi4/tree/main/17_modbus_rtu
+
+------------------------------------------------------------------------------
+  Van Tien <tien11102004@gmail.com>
+------------------------------------------------------------------------------
