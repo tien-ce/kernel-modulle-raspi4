@@ -8,22 +8,20 @@
 		#address-cells = <1>;
         #size-cells = <0>;
 		/* Define how children (sensors) are addressed */
-		lsmy,baudrate = <115200>;
+		lsmy,baudrate = <9600>;
 		/* Child node representing the CO Sensor */
 		co_sensor@24 {
 			status = "okay";
             compatible = "rs485,co_sensor";
             /* FIX: Use standard 'reg' property for the Slave ID */
-            reg = <0x24>; 
-            
-            lsmy,reg-addresses = <0x0006 0x0100 0x0101>;
-            lsmy,reg-names = "CO value", "Address", "Baudrate";
-            lsmy,reg-perm = <1 1 1>;
+            reg = <0x1>; 
+            lsmy,reg-addresses = <0x0006>;
         };
 		/* Child node representing the PM Sensor */
         pm_sensor@25 {
             compatible = "rs485,pm_sensor";
-            reg = <0x25>;
+            reg = <0x24>;
+            lsmy,reg-addresses = <0x0004 0x0009>;
         };
 	};
 };
