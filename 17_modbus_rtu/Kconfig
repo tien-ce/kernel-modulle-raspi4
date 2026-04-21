@@ -1,0 +1,13 @@
+mainmenu "Modbus RTU Module Configuration"
+
+menu "PM Sensor Options"
+
+config PM_SENSOR_PM10
+	bool "Include PM10 value register"
+	default n
+	help
+	  Say Y if your PM sensor reports PM10 particle readings.
+	  This adds a pm10_value sysfs attribute to the PM device node.
+	  If unsure, say N.
+
+endmenu

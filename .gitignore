@@ -4,6 +4,7 @@
 *.cmd
 *.mod
 *.mod.c
+*.o.d
 *.order
 *.symvers
 # clangd
@@ -18,3 +19,7 @@ compile_commands.json
 *.swp
 # device tree binary
 *.dtbo
+# config
+.config
+.config.old
+.config.cmd
