@@ -49,7 +49,6 @@ void timer_register_callback(bool (*hrtimer_expired_callback)(void));
  * Bridge between app and link layer
  */ 
 
- 
 bool ModbusInit(int baud);
 bool ModbusStart(void);
 void ModbusRun(void);

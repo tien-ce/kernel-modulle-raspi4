@@ -24,14 +24,13 @@
 #include "modbus_controller.h"
 
 #define MAX_LENGTH_BUFF 256
-#define BAUDRATE		115200
-#define SLAVE_ADDRESS	0x01
+#define BAUDRATE		9600	
 /* Use for register callback */
 bool (*transmit_success_ptr)(void) = NULL;
 bool (*receive_callback_ptr)(void) = NULL;
 
 static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigned char *buffer, size_t size);
-static void modbus_controller_snd_success(struct serdev_device *serdev);
+//static void modbus_controller_snd_success(struct serdev_device *serdev);
 struct serdev_device *modbus_controller;
 
 /* Declate the probe and remove functions */
@@ -87,7 +86,7 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
 
 	serdev_device_set_client_ops(serdev,&modbus_controller_ops);
 	(void)ModbusInit(BAUDRATE);
-	pr_info("Modbus Controller: Register uart\n");
+	pr_info("Modbus Controller: Register uart with baudrate: %d\n",BAUDRATE);
     /* 4. Start Modbus Layer (Initializes Timers and Tasklets) */
     if(!ModbusStart()) {
         pr_err("Modbus controller - Failed to start Modbus link layer\n");
@@ -95,8 +94,6 @@ static int modbus_controller_probe(struct serdev_device *serdev) {
         goto err_close_serdev; /* Jump to cleanup label */
     }
 
-    /* 6. Send initial test command */
-    ModbusSend(SLAVE_ADDRESS, 0x03, 0x01, 1,20);
     /* 7. Populate child nodes (sensors) defined in Device Tree */
 	status = devm_of_platform_populate(&serdev->dev);
 	if (status) {
@@ -146,13 +143,13 @@ static size_t modbus_controller_recv(struct serdev_device *serdev, const unsigne
 	return size;
 }
 
-static void modbus_controller_snd_success(struct serdev_device *serdev)
-{
-	if(transmit_success_ptr)
-	{
-		(void)transmit_success_ptr();
-	}	
-}
+//static void modbus_controller_snd_success(struct serdev_device *serdev)
+//{
+//	if(transmit_success_ptr)
+//	{
+//		(void)transmit_success_ptr();
+//	}	
+//}
 
 /**********************************************************
 	Exported functions
