@@ -31,12 +31,12 @@
 #include "Include/mbrtu.h"
 
 /* -------------------------------------------------------------------------- */
-/* Definitions                                 */
+/* Definitions									*/
 /* -------------------------------------------------------------------------- */
 
 #define MB_ADDRESS_BROADCAST 0
 #define MAX_PDU_SIZE         253
-
+#define MAX_VALUE_RESPONE	 10					/* We assume that no senosor hold value in more than 10 registers */
 /* -------------------------------------------------------------------------
  * Meta Information & Global Variables
  * ------------------------------------------------------------------------- */
@@ -57,8 +57,10 @@ static ModbusErrorInfo err          = MODBUS_NO_ERROR();
 static unsigned char     ucMBAddress;    /* Target Slave Address for current transaction */
 static int      baudrate;       /* Stored baudrate for RTU initialization */
 
-static unsigned char			pucMBFrame[MAX_PDU_SIZE];
-static uint16_t          usLength;
+static uint16_t					usRspone[MAX_VALUE_RESPONE];	/* Buffer holding return respone for device (using on data call back) */
+static uint8_t					ubRspLength;						/* Length of return respone */				
+static unsigned char			pucMBFrame[MAX_PDU_SIZE];		/* Buffer holding value from RTU Layer before put it into step parsing */
+static uint16_t					usLength;
 
 DECLARE_WAIT_QUEUE_HEAD(send_wait_queue);
 static eMasterType     master_state = EM_IDLE;
@@ -72,6 +74,7 @@ static eMBEventType    eEvent;
 
 /**
  * @brief Handles successfully parsed data from a Slave response.
+ * If request read more than 1 register, this callback is called each time.
  */
 static ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCallbackArgs *args)
 {
@@ -90,6 +93,7 @@ static ModbusError dataCallback(const ModbusMaster *master, const ModbusDataCall
         args->index,
         args->value,
         args->value);
+	usRspone[ubRspLength++] = args->value;
     return MODBUS_OK;
 }
 
@@ -129,7 +133,7 @@ static long send_and_wait_logic(int timeout, eMBEventType event)
 
     /* 4. CHECK: Ensure the event didn't happen in the microsecond
        between 'prepare' and 'trigger'. */
-    if (master_state != EM_PR || master_state != EM_PER) 
+    if (master_state != EM_PR && master_state != EM_PER) 
 	{
         /* 5. SLEEP: Yield the CPU
 		 * If tasklet run (preempt current thread(call wake up), the thread state will change to TASK_RUNNING)
@@ -316,6 +320,7 @@ SendRetType ModbusSend(char Address, int function, int startAddress, int quantit
 	int ret_val = ESEND_NOERR;
 	/* 0. Accquire the master lock*/
 	mutex_lock(&master_lock);
+	ubRspLength = 0; /* Reset response length before start read */
     /* 1. Build the PDU (Application Layer) */
     if(buildreq(&master, function, startAddress, quantity))
 	{
@@ -341,7 +346,7 @@ SendRetType ModbusSend(char Address, int function, int startAddress, int quantit
 	}
 	else
 	{
-		/* Wake up when receving messes from slave */
+		/* Wake up when receiving messes from slave */
 		pr_info("usLength:%d\n",usLength);
 		err = modbusParseResponsePDU(&master,
 							  ucMBAddress,
@@ -373,7 +378,8 @@ EXPORT_SYMBOL_GPL(ModbusSend);
 
 void ModbusReceive (unsigned char *buffer, uint16_t *length)
 {
-	*length = usLength;
-	uiPortMemcpy(buffer,pucMBFrame,usLength);	
+	pr_info("Read %d registers from user\n",ubRspLength);
+	*length = ubRspLength * sizeof(*usRspone);
+	uiPortMemcpy(buffer,(char*)usRspone,*length);	
 }
 EXPORT_SYMBOL_GPL(ModbusReceive);
