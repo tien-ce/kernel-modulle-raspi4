@@ -33,7 +33,7 @@
 #define PM_REG_VAL		3	/* Number of vaule register of PM sensor */
 #else
 #define PM_REG_VAL		2	/* Number of vaule register of PM sensor */
-#endif	//__CONFIG_PM10__
+#endif //CONFIG_PM10
 /*
  * It's a classic C macro trick. The do { ... } while (0) expands to a single
   statement that requires a semicolon,
@@ -86,7 +86,7 @@ static DEVICE_ATTR(pm2_5_value, S_IRUGO, pm2_5_show,NULL);
 static DEVICE_ATTR(pm1_0_value, S_IRUGO, pm1_0_show,NULL);
 #ifdef CONFIG_PM10
 static DEVICE_ATTR(pm10_value, S_IRUGO, pm10_show,NULL);
-#endif //__CONFIG_PM10__
+#endif //CONFIG_PM10
 struct file_operations modbusfops =
 {
 	.open    = modbus_open,
@@ -300,8 +300,8 @@ static int modbusplatform_driver_probe(struct platform_device *pdev)
 			sysfs_create_attr(dev, &dev_data->modbusdevice->kobj, &dev_attr_pm1_0_value.attr);
 			sysfs_create_attr(dev, &dev_data->modbusdevice->kobj, &dev_attr_pm2_5_value.attr);
 #ifdef CONFIG_PM10
-			sysfs_create_attr(dev, &dev_data->modbusdevice->kobj, &dev_attr_pm10_0_vaule.attr);
-#endif //__CONFIG_PM10__
+			sysfs_create_attr(dev, &dev_data->modbusdevice->kobj, &dev_attr_pm10_value.attr);
+#endif //CONFIG_PM10
 			break;
 		default:
 			break;

@@ -1,45 +1,33 @@
-#obj-m := modbus_controller_module.o
-obj-m := modbus_controller_module.o
-obj-m += modbus_device_module.o
-dt_source := rs485_overlay
+# --- Kernel Source & Toolchain Config ---
+KERNEL_SRC ?= ~/linux_rasp-6.12/
+ARCH ?= arm64
+CROSS_COMPILE ?= aarch64-linux-gnu-
 
-# 1.Pull in user choices from menuconfig
--include $(PWD)/.config
+# --- Load local menuconfig choices ---
+-include .config
 
-# 2. Tell the C Compiler to automatically include autoconf.h in all .c files
-# This replaces all your manual -DCONFIG_... flags
-ccflags-y += -I$(PWD) -include $(PWD)/include/generated/autoconf.h
+# --- Kbuild Descent Logic ---
+# Descend into subdirectories to build them as modules
+obj-m += modbus_controller/
+obj-m += modbus_device/
 
-modbus_controller_module-objs := modbuscontroller.o \
-								 modbuscontroller_timer.o \
-								 modbus_rtu/mbrtu.o \
-								 modbus_rtu/port_event.o \
-								 modbus_rtu/port_timer.o \
-								 modbus_rtu/modbus.o \
-								 modbus_rtu/mbcrc.o
-
-modbus_device_module-objs	 := modbusdevice.o \
-								modbusdevice_syscalls.o \
-
-ARCH = arm64
-CROSS_COMPILE=aarch64-linux-gnu-
-KERNEL_SRC = ~/linux_rasp-6.12/
-
-HOST_KERN_DIR = /lib/modules/$(shell uname -r)/build
-
+# --- Local Build Rules ---
 all:
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERNEL_SRC) M=$(PWD) modules
+
+clean:
+	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERNEL_SRC) M=$(PWD) clean
+
+# Run menuconfig for the standalone module setup
 menuconfig:
 	$(KERNEL_SRC)/scripts/kconfig/mconf Kconfig
-prepare:
-	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) O=$(KERNEL_OUT) modules_prepare
+
 dtb:
-	dtc -I dts -O dtb -o ${dt_source}.dtbo ${dt_source}.dts
-clean:
-	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERNEL_SRC) M=$(PWD) clean 
+	dtc -I dts -O dtb -o rs485_overlay.dtbo rs485_overlay.dts
+
 install:
-	push_rpi modbus_controller_module.ko
-	push_rpi modbus_device_module.ko
+	push_rpi modbus_controller/modbus_controller_module.ko
+	push_rpi modbus_device/modbus_device_module.ko
 	push_rpi rs485_overlay.dtbo
-host:
-	make -C $(HOST_KERN_DIR) M=$(PWD) modules
+
+.PHONY: all clean menuconfig dtb install
