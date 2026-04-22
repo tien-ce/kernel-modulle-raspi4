@@ -1,13 +1,8 @@
-mainmenu "Modbus RTU Module Configuration"
-
-menu "PM Sensor Options"
-
-config PM_SENSOR_PM10
-	bool "Include PM10 value register"
-	default n
+menuconfig MODBUS_STACK
+	tristate	"Modbus RTU Master Suport"
 	help
-	  Say Y if your PM sensor reports PM10 particle readings.
-	  This adds a pm10_value sysfs attribute to the PM device node.
-	  If unsure, say N.
-
-endmenu
+		Enable this to support Modbus RTU protocol over RS485 for Raspberry Pi.
+if MODBUS_STACK
+	source "modbus_controller/Kconfig"
+	source "modbus_device/Kconfig"
+endif

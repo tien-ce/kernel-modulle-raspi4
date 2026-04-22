@@ -1,0 +1,26 @@
+config MODBUS_RTU_CONTROLLER
+    tristate "Modbus RTU Controller Driver"
+    help
+      The core controller managing the Modbus FSM and RS485 timing.
+
+if MODBUS_RTU_CONTROLLER
+
+choice 
+	prompt "Modbus physical interface"
+	default MODBUS_INTERFACE_UART
+	help
+		"Select the physical transport layer for Modbus RTU stack."
+config MODBUS_INTERFACE_UART
+	bool "UART (Serdev)"
+	help
+		Use the standard UART (via Serdev) as the Modbus transprt.
+
+config MODBUS_INTERFACE_USB
+	bool "USB-to-RS485"
+	depends on USB
+	help
+		Use a USB-to-RS485 adapter as the Modbus transport.
+
+endchoice
+
+endif

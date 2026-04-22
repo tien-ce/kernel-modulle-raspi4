@@ -1,0 +1,22 @@
+config MODBUS_RTU_DEVICE
+	tristate "Modbus RTU Device Support"
+	default m
+	help
+	  Support for Modbus slave devices like CO and PM sensors.
+	  Each device is exposed via /dev and sysfs.
+
+if MODBUS_RTU_DEVICE
+
+menu "PM Sensor Options"
+
+config PM10
+	bool "Include PM10 value register"
+	default n
+	help
+	  Say Y if your PM sensor reports PM10 particle readings.
+	  This adds a pm10_value sysfs attribute to the PM device node.
+	  If unsure, say N.
+
+endmenu
+
+endif
