@@ -43,18 +43,15 @@ User Space
 ├── Kconfig                      # menuconfig options (PM10 support)
 ├── Makefile                     # Cross-compile rules
 ├── rs485_overlay.dts            # Device Tree overlay
-├── modbus_controller.h          # Shared API between the two modules
-├── modbuscontroller.c           # Serdev UART driver
-├── modbuscontroller_timer.c     # hrtimer wrapper
-├── modbusdevice.c               # Platform device driver + module init
-├── modbusdevice_syscalls.c      # VFS file operations + sysfs callbacks
-├── modbusdevice_sysfs.h         # Shared structs and prototypes
-├── modbus_rtu/
-│   ├── modbus.c                 # Application FSM (ModbusSend / ModbusReceive)
-│   ├── mbrtu.c                  # RTU frame layer
-│   ├── mbcrc.c                  # CRC16 implementation
-│   ├── port_event.c             # Tasklet event queuing
-│   └── port_timer.c             # hrtimer abstraction
+├── modbus_controller/
+│   ├── modbus_controller.h      # Shared API between the two modules
+│   ├── modbuscontroller.c       # Serdev UART driver
+│   ├── modbuscontroller_timer.c # hrtimer wrapper
+│   └── modbus_rtu/              # Modbus protocol implementation
+├── modbus_device/
+│   ├── modbusdevice.c           # Platform device driver + module init
+│   ├── modbusdevice_syscalls.c  # VFS file operations + sysfs callbacks
+│   └── modbusdevice_sysfs.h     # Shared structs and prototypes
 └── lightmodbus/                 # LightModbus PDU library (kernel-ported, header-only)
 ```
 
@@ -68,19 +65,29 @@ sudo apt install gcc-aarch64-linux-gnu device-tree-compiler
 ```
 Kernel source must be at `~/linux_rasp-6.12/` (configure `KERNEL_SRC` in Makefile if different).
 
-**(Optional) Enable PM10 register**
+**Configuration**
+You can configure the module features using the standard Linux menuconfig interface:
 ```bash
-make menuconfig   # PM Sensor Options → Include PM10 value register
+make menuconfig
 ```
+In the menu:
+1. Select **Modbus RTU Master Support** (press `M` to build as modules).
+2. Enter the menu to configure specific features:
+   - **Modbus RTU Controller Driver**: Select physical interface (UART/USB).
+   - **Modbus RTU Device Support**: Enable sensor types.
+   - **PM Sensor Options**: Enable **Include PM10 value register** if your sensor supports it.
 
 **Compile**
 ```bash
-make all    # kernel modules
-make dtb    # Device Tree overlay
+make       # Builds both modules recursively
+make dtb   # Device Tree overlay
 make clean
 ```
 
-Outputs: `modbus_controller_module.ko`, `modbus_device_module.ko`, `rs485_overlay.dtbo`
+Outputs: 
+- `modbus_controller/modbus_controller_module.ko`
+- `modbus_device/modbus_device_module.ko`
+- `rs485_overlay.dtbo`
 
 **Deploy to Raspberry Pi**
 ```bash
@@ -131,8 +138,8 @@ Controller must be loaded first — device module depends on its exported symbol
 
 ```bash
 # Load
-sudo insmod modbus_controller_module.ko
-sudo insmod modbus_device_module.ko
+sudo insmod modbus_controller/modbus_controller_module.ko
+sudo insmod modbus_device/modbus_device_module.ko
 
 # Unload (reverse order)
 sudo rmmod modbus_device_module
