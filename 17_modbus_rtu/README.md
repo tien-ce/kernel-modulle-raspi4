@@ -40,19 +40,23 @@ User Space
 
 ```
 17_modbus_rtu/
-├── Kconfig                      # menuconfig options (PM10 support)
-├── Makefile                     # Cross-compile rules
+├── Kconfig                      # menuconfig options
+├── Kconfig.local                # Standalone config wrapper
+├── Makefile                     # Dual-mode build rules
 ├── rs485_overlay.dts            # Device Tree overlay
-├── modbus_controller/
-│   ├── modbus_controller.h      # Shared API between the two modules
+├── modbus_controller/           # --- Controller Module ---
+│   ├── modbus_controller.h      # Shared API
 │   ├── modbuscontroller.c       # Serdev UART driver
 │   ├── modbuscontroller_timer.c # hrtimer wrapper
-│   └── modbus_rtu/              # Modbus protocol implementation
-├── modbus_device/
-│   ├── modbusdevice.c           # Platform device driver + module init
-│   ├── modbusdevice_syscalls.c  # VFS file operations + sysfs callbacks
-│   └── modbusdevice_sysfs.h     # Shared structs and prototypes
-└── lightmodbus/                 # LightModbus PDU library (kernel-ported, header-only)
+│   └── modbus_rtu/              # --- Protocol Layer ---
+│       ├── modbus.c             # Orchestration & Exported Symbols
+│       ├── mbrtu.c              # RTU State Machine
+│       ├── Include/             # Protocol headers
+│       └── lightmodbus/         # LightModbus PDU library
+└── modbus_device/               # --- Device Module ---
+    ├── modbusdevice.c           # Platform device driver
+    ├── modbusdevice_syscalls.c  # Syscalls & sysfs
+    └── modbusdevice_sysfs.h     # Shared structs
 ```
 
 ---
