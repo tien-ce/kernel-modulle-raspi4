@@ -1,4 +1,5 @@
 config MODBUS_RTU_DEVICE
+	depends on MODBUS_RTU_CONTROLLER
 	tristate "Modbus RTU Device Support"
 	default m
 	help

@@ -1,8 +1,9 @@
 config MODBUS_RTU_CONTROLLER
+	depends on MODBUS_STACK
     tristate "Modbus RTU Controller Driver"
+	default m
     help
       The core controller managing the Modbus FSM and RS485 timing.
-
 if MODBUS_RTU_CONTROLLER
 
 choice 

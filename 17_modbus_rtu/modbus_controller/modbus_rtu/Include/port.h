@@ -21,7 +21,7 @@
 #include <linux/string.h>
 #include <linux/irqflags.h>
 #include <linux/spinlock.h>
-#include "modbus_controller.h"
+#include "../../modbus_controller.h"
 /* Use kernel-standard inline attribute */
 #define INLINE                      inline
 
